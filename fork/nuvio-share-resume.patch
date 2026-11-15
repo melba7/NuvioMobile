@@ -903,10 +903,10 @@ index 0000000..9ff18f5
 +</plist>
 diff --git a/iosApp/ShareExtension/ShareViewController.swift b/iosApp/ShareExtension/ShareViewController.swift
 new file mode 100644
-index 0000000..29287f4
+index 0000000..7dd4e27
 --- /dev/null
 +++ b/iosApp/ShareExtension/ShareViewController.swift
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,139 @@
 +import UIKit
 +import UserNotifications
 +
@@ -962,7 +962,15 @@ index 0000000..29287f4
 +                }
 +            }
 +        }
-+        group.notify(queue: .main) { done(found.all()) }
++        // A provider that never calls back must not leave an invisible sheet over the host app.
++        var delivered = false
++        let deliver = {
++            guard !delivered else { return }
++            delivered = true
++            done(found.all())
++        }
++        group.notify(queue: .main, execute: deliver)
++        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: deliver)
 +    }
 +
 +    private static func firstWebLink(in text: String) -> String? {
@@ -977,8 +985,8 @@ index 0000000..29287f4
 +    }
 +
 +    private static func clipURL(for link: String) -> URL? {
-+        var allowed = CharacterSet.alphanumerics
-+        allowed.insert(charactersIn: "-._~")
++        // RFC 3986 unreserved characters only (ASCII), so every other byte is percent-encoded.
++        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 +        guard let encoded = link.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
 +        return URL(string: "nuvio://clip?url=" + encoded)
 +    }
@@ -994,7 +1002,7 @@ index 0000000..29287f4
 +                }
 +                let function = unsafeBitCast(implementation, to: OpenURLFunction.self)
 +                function(current, selector, url as NSURL, NSDictionary(), unsafeBitCast(callback, to: AnyObject.self))
-+                perform(#selector(openTimedOut), with: nil, afterDelay: 2)
++                perform(#selector(openTimedOut), with: nil, afterDelay: 4)
 +                return
 +            }
 +            responder = current.next

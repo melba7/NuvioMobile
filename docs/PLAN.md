@@ -47,7 +47,7 @@ for milestone 4 or after a check fails twice.
     names, reached from `MainAppContent.kt` on `AppDeepLink.Clip`. Signing script: bundle
     ID + profile for the new extension next to the widget one.
   - Done when: TestFlight build installs; TikTok and Instagram share sheets list Nuvio;
-    tapping it opens Clip finder with the link; sharing a saved video does the same.
+    tapping it opens Clip finder with the link; a saved video shared from the Files app ("Open in Nuvio") does the same (Photos needs an App Group; later).
   - Try it: open a TikTok, Share, Nuvio.
   - Files: iosApp.xcodeproj/project.pbxproj, iosApp/ShareExtension/*, iosApp/iosApp/Info.plist,
     clipfinder/ClipFinderScreen.kt, MainAppContent.kt, fork/nuvio_testflight.py.
