@@ -1,0 +1,706 @@
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
+index 41bcb0f..0d8c6ff 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
+@@ -774,6 +774,8 @@ internal fun MainAppContent(
+                         AppDeepLinkRepository.markConsumed(deepLink)
+                     }
+ 
++                    is AppDeepLink.Clip -> AppDeepLinkRepository.markConsumed(deepLink)
++
+                     null -> Unit
+                 }
+             }
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
+index 5f8e33f..c9e5ba7 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
+@@ -26,6 +26,10 @@ internal sealed interface AppDeepLink {
+     data class Party(
+         val code: String,
+     ) : AppDeepLink
++
++    data class Clip(
++        val url: String,
++    ) : AppDeepLink
+ }
+ 
+ internal object AppDeepLinkRepository {
+@@ -104,6 +108,8 @@ internal fun parseAppDeepLink(url: String): AppDeepLink? {
+ 
+         "party" -> partyDeepLink(pathSegments.firstOrNull() ?: firstParameter(parsedUrl, "code"))
+ 
++        "clip" -> clipDeepLink(firstParameter(parsedUrl, "url"))
++
+         "auth" -> null
+ 
+         else -> {
+@@ -119,6 +125,16 @@ internal fun parseAppDeepLink(url: String): AppDeepLink? {
+ private fun partyDeepLink(code: String?): AppDeepLink.Party? =
+     code?.let(::normalizePartyCode)?.takeIf { it.length == PARTY_CODE_LENGTH }?.let(AppDeepLink::Party)
+ 
++private const val CLIP_URL_MAX_LENGTH = 2048
++
++private fun clipDeepLink(link: String?): AppDeepLink.Clip? {
++    if (link == null || link.length > CLIP_URL_MAX_LENGTH) return null
++    val hasWebScheme = link.startsWith("https://", ignoreCase = true) || link.startsWith("http://", ignoreCase = true)
++    if (!hasWebScheme) return null
++    val authority = link.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#')
++    return if (authority.isBlank()) null else AppDeepLink.Clip(link)
++}
++
+ private fun parseMetaFromParameters(parsedUrl: Url): AppDeepLink.Meta? {
+     val type = firstParameter(parsedUrl, "type", "mediaType", "media_type")
+         ?.let(::normalizeDeepLinkMediaType)
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
+new file mode 100644
+index 0000000..2039549
+--- /dev/null
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
+@@ -0,0 +1,119 @@
++package com.nuvio.app.features.clipfinder
++
++object ClipMatcher {
++    const val MIN_HITS = 4
++    /** The best candidate must hold at least this share of the clip's distinct triples (absolute bar). */
++    private const val MIN_SHARE = 0.15
++    /** A hit needs a different hit from a different cue within this distance to count. */
++    private const val NEIGHBOUR_MS = 45_000L
++    /** Hits closer than this to the previous hit belong to the same time cluster. */
++    private const val CLUSTER_GAP_MS = 60_000L
++    /** Triples that occur more often than this in one episode are stock phrases: ignored. */
++    private const val MAX_OCCURRENCES = 3
++
++    /** A cluster is substantial (a real scene of the clip) with this many hits from this many cues. */
++    private const val MIN_CUES = 3
++
++    private class Occurrence(val key: String, val startMs: Long, val endMs: Long, val cue: Int)
++    private class Scored(val candidate: ClipCandidate, val mainHits: Int)
++
++    /**
++     * Scores each episode by its distinct word triples shared with the clip. A hit counts only
++     * when a different triple from a different cue lies within 45 s, so one repeated phrase
++     * cannot vouch for itself. Counted hits are grouped into time clusters (gap over 60 s starts
++     * a new one). Clips can be compilations of several scenes, so every substantial cluster (4+
++     * distinct hits from 3+ cues) is part of the match and a lone stray phrase is not: the span
++     * runs from the earliest substantial cluster to the latest, and hits are totalled over them.
++     * With no substantial cluster the biggest one is used. Best-first; only the best can be
++     * [ClipCandidate.confident]: at least 4 hits in its biggest cluster, hits of at least 15% of
++     * the clip's distinct triples, and at least twice the runner-up's hits.
++     */
++    fun match(
++        lines: List<ClipLine>,
++        episodes: List<EpisodeCues>,
++        maxResults: Int = 3,
++        fillers: Set<String> = emptySet(),
++    ): List<ClipCandidate> {
++        val clipTriples = ClipText.triples(lines.flatMap { ClipText.normalize(it.text, fillers) }).toSet()
++        if (clipTriples.isEmpty()) return emptyList()
++
++        val scored = episodes.mapNotNull { score(it, clipTriples, fillers) }
++            .sortedByDescending { it.candidate.hits }
++            .take(maxResults)
++        return scored.mapIndexed { index, s ->
++            val c = s.candidate
++            val other = scored.filterIndexed { i, _ -> i != index }.maxOfOrNull { it.candidate.hits } ?: 0
++            val share = c.hits.toDouble() / clipTriples.size
++            val raw = minOf(1.0, c.hits / 12.0) * c.hits / (c.hits + other) * minOf(1.0, share / 0.5)
++            val clear = index == 0 && s.mainHits >= MIN_HITS && c.hits >= 2 * other && share >= MIN_SHARE
++            c.copy(confident = clear, confidence = if (c.hits < MIN_HITS) minOf(raw, 0.3) else raw)
++        }
++    }
++
++    private fun score(ep: EpisodeCues, clipTriples: Set<String>, fillers: Set<String>): Scored? {
++        class W(val word: String, val start: Long, val end: Long, val cue: Int)
++        val words = ep.cues.sortedBy { it.startTimeMs }.flatMapIndexed { cueIndex, cue ->
++            ClipText.normalize(cue.text, fillers).map { W(it, cue.startTimeMs, cue.endTimeMs, cueIndex) }
++        }
++        val found = mutableListOf<Occurrence>()
++        for (i in 0..words.size - 3) {
++            val key = "${words[i].word} ${words[i + 1].word} ${words[i + 2].word}"
++            if (key in clipTriples) found += Occurrence(key, words[i].start, words[i + 2].end, words[i].cue)
++        }
++        val usable = found.groupBy { it.key }.filterValues { it.size <= MAX_OCCURRENCES }.values.flatten()
++            .sortedBy { it.startMs }
++        val kept = usable.filterIndexed { i, o -> hasNeighbour(usable, i, o) }
++        if (kept.isEmpty()) return null
++
++        val clusters = groupByTime(kept)
++        fun hits(c: List<Occurrence>) = c.map { it.key }.toSet().size
++        val main = clusters.maxByOrNull { hits(it) }!! // first (earliest) on a tie
++        val substantial = clusters.filter { hits(it) >= MIN_HITS && it.map { o -> o.cue }.toSet().size >= MIN_CUES }
++        val spanned = (substantial.ifEmpty { listOf(main) }).flatten()
++        return Scored(
++            ClipCandidate(
++                videoId = ep.videoId,
++                season = ep.season,
++                episode = ep.episode,
++                startMs = spanned.minOf { it.startMs },
++                endMs = spanned.maxOf { it.endMs },
++                confidence = 0.0,
++                hits = hits(spanned),
++                confident = false,
++            ),
++            mainHits = hits(main),
++        )
++    }
++
++    /** Splits time-sorted hits into runs where each hit starts within the gap of the run's latest end. */
++    private fun groupByTime(sorted: List<Occurrence>): List<List<Occurrence>> {
++        val result = mutableListOf<MutableList<Occurrence>>()
++        var latestEnd = 0L
++        for (o in sorted) {
++            if (result.isEmpty() || o.startMs - latestEnd > CLUSTER_GAP_MS) {
++                result += mutableListOf(o)
++                latestEnd = o.endMs
++            } else {
++                result.last() += o
++                latestEnd = maxOf(latestEnd, o.endMs)
++            }
++        }
++        return result
++    }
++
++    private fun counts(a: Occurrence, b: Occurrence) = a.key != b.key && a.cue != b.cue
++
++    private fun hasNeighbour(sorted: List<Occurrence>, index: Int, o: Occurrence): Boolean {
++        var j = index - 1
++        while (j >= 0 && o.startMs - sorted[j].startMs <= NEIGHBOUR_MS) {
++            if (counts(o, sorted[j])) return true
++            j--
++        }
++        j = index + 1
++        while (j < sorted.size && sorted[j].startMs - o.startMs <= NEIGHBOUR_MS) {
++            if (counts(o, sorted[j])) return true
++            j++
++        }
++        return false
++    }
++}
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipModels.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipModels.kt
+new file mode 100644
+index 0000000..5784ff0
+--- /dev/null
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipModels.kt
+@@ -0,0 +1,29 @@
++package com.nuvio.app.features.clipfinder
++
++import com.nuvio.app.features.player.SubtitleSyncCue
++
++/** One piece of recognised speech (or caption) with its time inside the clip. */
++data class ClipLine(val text: String, val startMs: Long, val endMs: Long)
++
++/** All subtitle cues of one episode (or one movie: season and episode null). */
++data class EpisodeCues(
++    val videoId: String,
++    val season: Int?,
++    val episode: Int?,
++    val cues: List<SubtitleSyncCue>,
++)
++
++/**
++ * A possible answer. [startMs]..[endMs] is the matched span in the episode, [hits] the number
++ * of distinct word triples found, [confidence] 0..1, [confident] true only for a clear winner.
++ */
++data class ClipCandidate(
++    val videoId: String,
++    val season: Int?,
++    val episode: Int?,
++    val startMs: Long,
++    val endMs: Long,
++    val confidence: Double,
++    val hits: Int,
++    val confident: Boolean,
++)
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt
+new file mode 100644
+index 0000000..b052c4c
+--- /dev/null
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt
+@@ -0,0 +1,97 @@
++package com.nuvio.app.features.clipfinder
++
++object ClipText {
++    private val apostrophes = setOf('\'', '’', '‘', 'ʼ')
++    private val bracketPairs = mapOf('[' to ']', '(' to ')', '{' to '}', '（' to '）', '［' to '］', '【' to '】')
++    /** Characters that may start a subtitle line without being words: dashes and music notes. */
++    private val lineMarks = setOf('-', '‐', '–', '—', '•', '♪', '♫')
++    private const val MAX_LABEL_LENGTH = 24
++    private const val MAX_LABEL_WORDS = 3
++
++    /**
++     * Lowercase words made of letters or digits of any script. Apostrophes are dropped without
++     * splitting ("don't" -> "dont"), combining marks (such as Arabic vowel signs) are dropped,
++     * everything else separates words. Subtitle noise is removed first: bracketed text
++     * ("[music]", "(LAUGHS)"), leading dashes and music notes, and a leading UPPERCASE speaker
++     * label ("JOHN:"; scripts without capitals are left alone). Digit groups separated only by
++     * spaces are joined ("2 00 8" -> "2008"). [fillers] is an optional list of words to remove;
++     * it is empty by default so no language is favoured. A text with no words gives an empty list.
++     */
++    fun normalize(text: String, fillers: Set<String> = emptySet()): List<String> {
++        val words = mutableListOf<String>()
++        for (line in dropBrackets(text).lines()) {
++            for (word in lineWords(withoutLabel(line))) if (word !in fillers) words += word
++        }
++        return words
++    }
++
++    private fun lineWords(line: String): List<String> {
++        val words = mutableListOf<String>()
++        val current = StringBuilder()
++        var onlySpaceSince = false // only whitespace between the previous word and this one
++        var lastWasDigits = false
++        fun flush() {
++            if (current.isEmpty()) return
++            val word = current.toString()
++            val digits = word.all { it.isDigit() }
++            if (digits && lastWasDigits && onlySpaceSince) words[words.size - 1] = words.last() + word else words += word
++            lastWasDigits = digits
++            onlySpaceSince = true
++            current.clear()
++        }
++        for (ch in line.lowercase()) {
++            when {
++                ch.isLetterOrDigit() -> current.append(ch)
++                ch in apostrophes -> Unit
++                ch.category == CharCategory.NON_SPACING_MARK || ch.category == CharCategory.COMBINING_SPACING_MARK -> Unit
++                else -> {
++                    flush()
++                    if (!ch.isWhitespace()) onlySpaceSince = false
++                }
++            }
++        }
++        flush()
++        return words
++    }
++
++    /** Removes [..], (..) and {..} (also full-width forms). An opener with no closer is kept as a separator. */
++    private fun dropBrackets(text: String): String {
++        val out = StringBuilder()
++        var i = 0
++        while (i < text.length) {
++            val close = bracketPairs[text[i]]
++            val end = if (close == null) -1 else text.indexOf(close, i + 1)
++            if (end >= 0) {
++                out.append(' ')
++                i = end + 1
++            } else {
++                out.append(text[i])
++                i++
++            }
++        }
++        return out.toString()
++    }
++
++    /**
++     * Drops leading dashes/notes and a leading "SPEAKER:" label (1-3 words of capitals, digits,
++     * . - ' _ only, and whitespace after the colon, so "AT 10:30 WE LEAVE" keeps its words).
++     */
++    private fun withoutLabel(line: String): String {
++        val body = line.trimStart { it.isWhitespace() || it in lineMarks }
++        val colon = body.indexOf(':')
++        if (colon < 1 || colon > MAX_LABEL_LENGTH) return body
++        val label = body.substring(0, colon)
++        val shaped = label.all { it.isUpperCase() || it.isDigit() || it.isWhitespace() || it in ".-'_" }
++        val labelWords = label.split(' ', '\t').count { it.isNotEmpty() }
++        val spaceAfter = colon + 1 >= body.length || body[colon + 1].isWhitespace()
++        return if (shaped && label.any { it.isUpperCase() } && labelWords <= MAX_LABEL_WORDS && spaceAfter) {
++            body.substring(colon + 1)
++        } else {
++            body
++        }
++    }
++
++    /** Every run of three neighbouring words, joined by a space. */
++    fun triples(words: List<String>): List<String> =
++        if (words.size < 3) emptyList() else List(words.size - 2) { "${words[it]} ${words[it + 1]} ${words[it + 2]}" }
++}
+diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
+index a1e48f9..73c7e16 100644
+--- a/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
++++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
+@@ -1,5 +1,6 @@
+ package com.nuvio.app.core.deeplink
+ 
++import io.ktor.http.encodeURLParameter
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertNull
+@@ -74,4 +75,42 @@ class AppUrlBridgeTest {
+     fun `does not treat non-host stremio link as addon install`() {
+         assertNull(parseAppDeepLink("stremio://detail/series/tt0944947"))
+     }
++
++    @Test
++    fun `parses clip links from TikTok and Instagram`() {
++        assertEquals(
++            AppDeepLink.Clip("https://www.tiktok.com/@someone/video/7300000000000000000"),
++            parseAppDeepLink("nuvio://clip?url=https%3A%2F%2Fwww.tiktok.com%2F%40someone%2Fvideo%2F7300000000000000000"),
++        )
++        assertEquals(
++            AppDeepLink.Clip("https://www.instagram.com/reel/Cabc123xyz/"),
++            parseAppDeepLink("nuvio://clip?url=https%3A%2F%2Fwww.instagram.com%2Freel%2FCabc123xyz%2F"),
++        )
++    }
++
++    @Test
++    fun `clip link keeps encoded characters`() {
++        val link = "https://vm.tiktok.com/ZM8abc/?a=1&b=two words&c=%C3%A9"
++        assertEquals(AppDeepLink.Clip(link), parseAppDeepLink("nuvio://clip?url=${link.encodeURLParameter()}"))
++    }
++
++    @Test
++    fun `rejects clip links without a usable web address`() {
++        assertNull(parseAppDeepLink("nuvio://clip"))
++        assertNull(parseAppDeepLink("nuvio://clip?url="))
++        assertNull(parseAppDeepLink("nuvio://clip?url=%20%20"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=javascript%3Aalert(1)"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=file%3A%2F%2F%2Fetc%2Fpasswd"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=ftp%3A%2F%2Fexample.com%2Fa"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=https%3A%2F%2F"))
++    }
++
++    @Test
++    fun `rejects clip links longer than 2048 characters`() {
++        val prefix = "https://www.tiktok.com/"
++        val ok = prefix + "a".repeat(2048 - prefix.length)
++        assertEquals(AppDeepLink.Clip(ok), parseAppDeepLink("nuvio://clip?url=${ok.encodeURLParameter()}"))
++        val tooLong = ok + "a"
++        assertNull(parseAppDeepLink("nuvio://clip?url=${tooLong.encodeURLParameter()}"))
++    }
+ }
+diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
+new file mode 100644
+index 0000000..5cb8884
+--- /dev/null
++++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
+@@ -0,0 +1,329 @@
++package com.nuvio.app.features.clipfinder
++
++import com.nuvio.app.features.player.SubtitleSyncCue
++import kotlin.random.Random
++import kotlin.test.Test
++import kotlin.test.assertEquals
++import kotlin.test.assertTrue
++
++/** All text here is generated nonsense words; no real dialogue. */
++class ClipMatcherTest {
++
++    private val syllables = listOf("ba", "ko", "ri", "tu", "ne", "sa", "mo", "li", "da", "pe", "vu", "zi")
++    private val vocabulary: List<String> = run {
++        val r = Random(7)
++        List(500) { "${syllables.random(r)}${syllables.random(r)}${syllables.random(r)}" }.distinct()
++    }
++
++    /** One cue every 4 s, 6 made-up words each. */
++    private fun episode(videoId: String, seed: Int, cueCount: Int = 400, season: Int? = 1, episode: Int? = 1): EpisodeCues {
++        val r = Random(seed)
++        val cues = List(cueCount) { i ->
++            SubtitleSyncCue(i * 4_000L, i * 4_000L + 3_000L, List(6) { vocabulary.random(r) }.joinToString(" "))
++        }
++        return EpisodeCues(videoId, season, episode, cues)
++    }
++
++    private fun linesFrom(ep: EpisodeCues, range: IntRange): List<ClipLine> {
++        val base = ep.cues[range.first].startTimeMs
++        return range.map { ClipLine(ep.cues[it].text, ep.cues[it].startTimeMs - base, ep.cues[it].endTimeMs - base) }
++    }
++
++    /** Copy of [ep] with some cues replaced (index to cue; the cue keeps its own timing from [ep]). */
++    private fun withCues(ep: EpisodeCues, vararg swaps: Pair<Int, SubtitleSyncCue>): EpisodeCues {
++        val cues = ep.cues.toMutableList()
++        for ((i, cue) in swaps) cues[i] = cues[i].copy(text = cue.text)
++        return ep.copy(cues = cues)
++    }
++
++    private fun assertNear(expected: Long, actual: Long, toleranceMs: Long = 5_000L) =
++        assertTrue(kotlin.math.abs(expected - actual) <= toleranceMs, "expected about $expected but was $actual")
++
++    private val ep1 = episode("tt1:1:1", seed = 1, episode = 1)
++    private val ep2 = episode("tt1:1:2", seed = 2, episode = 2)
++    private val ep3 = episode("tt1:1:3", seed = 3, episode = 3)
++
++    @Test
++    fun `exact lines find the right episode and moment`() {
++        val result = ClipMatcher.match(linesFrom(ep2, 100..120), listOf(ep1, ep2, ep3))
++        val best = result.first()
++        assertEquals("tt1:1:2", best.videoId)
++        assertEquals(2, best.episode)
++        assertTrue(best.confident)
++        assertTrue(best.confidence > 0.5)
++        assertNear(ep2.cues[100].startTimeMs, best.startMs)
++        assertNear(ep2.cues[120].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `thirty percent wrong words still match`() {
++        val r = Random(11)
++        val noisy = linesFrom(ep3, 50..90).map { line ->
++            line.copy(text = line.text.split(" ").joinToString(" ") { if (r.nextInt(100) < 30) "zq${r.nextInt(1000)}" else it })
++        }
++        val best = ClipMatcher.match(noisy, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:3", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep3.cues[50].startTimeMs, best.startMs, 12_000L)
++    }
++
++    @Test
++    fun `half the lines missing still match`() {
++        val lines = linesFrom(ep1, 200..260).filterIndexed { i, _ -> i % 2 == 0 }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep1.cues[200].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `lines out of order still match`() {
++        val lines = linesFrom(ep2, 10..40)
++        val shuffled = lines.drop(15) + lines.take(15).reversed()
++        val best = ClipMatcher.match(shuffled, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:2", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep2.cues[10].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `similar episode sharing a few phrases loses`() {
++        val shared = listOf(145, 150, 155)
++        val lookalike = ep1.copy(
++            videoId = "tt1:1:9",
++            episode = 9,
++            cues = ep3.cues.mapIndexed { i, cue -> if (i in shared) cue.copy(text = ep1.cues[i].text) else cue },
++        )
++        val result = ClipMatcher.match(linesFrom(ep1, 140..160), listOf(lookalike, ep1))
++        val best = result.first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep1.cues[140].startTimeMs, best.startMs)
++        assertTrue(result.size < 2 || result[1].hits < best.hits)
++    }
++
++    @Test
++    fun `wrong show sharing a few stock phrases is not confident`() {
++        // Two other-show episodes reuse two short passages (2 cues each) of the clip.
++        val other = listOf(episode("tt2:1:1", 21), episode("tt2:1:2", 22)).map { ep ->
++            withCues(ep, 40 to ep1.cues[105], 41 to ep1.cues[106], 300 to ep1.cues[120], 301 to ep1.cues[121])
++        }
++        val result = ClipMatcher.match(linesFrom(ep1, 100..130), other)
++        assertTrue(result.first().hits >= ClipMatcher.MIN_HITS, "the wrong show must share something")
++        assertTrue(result.none { it.confident })
++    }
++
++    @Test
++    fun `movie with one long cue list`() {
++        val movie = episode("tt9", seed = 5, cueCount = 1_800, season = null, episode = null)
++        val result = ClipMatcher.match(linesFrom(movie, 900..930), listOf(movie))
++        val best = result.single()
++        assertEquals(null, best.season)
++        assertTrue(best.confident)
++        assertNear(movie.cues[900].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `empty transcript gives no candidates`() {
++        assertEquals(emptyList(), ClipMatcher.match(emptyList(), listOf(ep1)))
++        assertEquals(emptyList(), ClipMatcher.match(listOf(ClipLine("...", 0, 1_000)), listOf(ep1)))
++    }
++
++    @Test
++    fun `compilation of three jumps reports the first segment as the start`() {
++        val segments = listOf(20..30, 120..130, 300..310)
++        val lines = segments.flatMap { linesFrom(ep1, it) }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep1.cues[20].startTimeMs, best.startMs)
++        assertNear(ep1.cues[310].endTimeMs, best.endMs)
++    }
++
++    private fun assertCompilationStartsAtFirst(starts: List<Int>, base: EpisodeCues = ep1) {
++        val lines = starts.flatMap { linesFrom(base, it..it + 10) }
++        val best = ClipMatcher.match(lines, listOf(base, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(base.cues[starts.first()].startTimeMs, best.startMs)
++        assertNear(base.cues[starts.last() + 10].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `compilation of four equal segments starts at the first one`() =
++        assertCompilationStartsAtFirst(listOf(20, 100, 180, 260))
++
++    @Test
++    fun `compilation of six equal segments starts at the first one`() =
++        assertCompilationStartsAtFirst(listOf(20, 80, 140, 200, 260, 320))
++
++    @Test
++    fun `compilation with one stray stock phrase earlier keeps the first real segment`() {
++        // Cues 10 and 11 (0:40) repeat two lines of the third segment; they are one tiny cluster.
++        val stray = withCues(ep1, 10 to ep1.cues[205], 11 to ep1.cues[206])
++        assertCompilationStartsAtFirst(listOf(100, 200, 300), stray)
++    }
++
++    @Test
++    fun `fewer than four hits is never confident`() {
++        // Two short lines (one triple + two triples) from two different cues of ep1.
++        val a = ClipLine(ep1.cues[5].text.split(" ").take(3).joinToString(" "), 0, 1_000)
++        val b = ClipLine(ep1.cues[6].text.split(" ").take(4).joinToString(" "), 2_000, 3_000)
++        val result = ClipMatcher.match(listOf(a, b), listOf(ep1))
++        assertEquals(3, result.single().hits)
++        assertTrue(result.none { it.confident })
++    }
++
++    @Test
++    fun `arabic letters survive normalising and marks are dropped`() {
++        val words = ClipText.normalize("بَيْتٌ كبير، والعمل!")
++        assertEquals(listOf("بيت", "كبير", "والعمل"), words)
++    }
++
++    @Test
++    fun `arabic clip matches arabic cues`() {
++        val letters = "بتثجحخدذرزسشص"
++        val r = Random(3)
++        val cues = List(60) { i ->
++            SubtitleSyncCue(i * 4_000L, i * 4_000L + 3_000L, List(6) { CharArray(4) { letters.random(r) }.concatToString() }.joinToString(" "))
++        }
++        val ep = EpisodeCues("ar1", null, null, cues)
++        val best = ClipMatcher.match(linesFrom(ep, 10..25), listOf(ep)).single()
++        assertTrue(best.confident)
++        assertNear(cues[10].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `normalise handles case punctuation and apostrophes`() {
++        assertEquals(listOf("hello", "world", "dont", "stop", "200"), ClipText.normalize("Hello, WORLD! Don't -- stop... 2 00"))
++        assertEquals(listOf("hello", "world"), ClipText.normalize("Hello the world", fillers = setOf("the")))
++        assertEquals(listOf("the", "end"), ClipText.normalize("The End"))
++    }
++
++    @Test
++    fun `word triples slide over the words`() {
++        assertEquals(listOf("a b c", "b c d"), ClipText.triples(listOf("a", "b", "c", "d")))
++        assertEquals(emptyList(), ClipText.triples(listOf("a", "b")))
++    }
++
++    @Test
++    fun `a phrase repeated earlier in the episode does not move the start`() {
++        // The clip scene is at 15:00 (cue 225). Cues 30 and 31 (2:00) say the same two lines.
++        val repeated = withCues(ep1, 30 to ep1.cues[232], 31 to ep1.cues[233])
++        val best = ClipMatcher.match(linesFrom(repeated, 225..245), listOf(repeated, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(repeated.cues[225].startTimeMs, best.startMs)
++        assertNear(repeated.cues[245].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `one line repeated earlier cannot vouch for itself`() {
++        val repeated = withCues(ep1, 30 to ep1.cues[232])
++        val best = ClipMatcher.match(linesFrom(repeated, 225..245), listOf(repeated)).first()
++        assertNear(repeated.cues[225].startTimeMs, best.startMs)
++        // A single line alone: its overlapping triples are not neighbours of each other.
++        val lone = withCues(ep2, 50 to ep1.cues[10])
++        assertEquals(emptyList(), ClipMatcher.match(listOf(ClipLine(ep1.cues[10].text, 0, 3_000)), listOf(lone)))
++    }
++
++    @Test
++    fun `two stock passages in a wrong movie are not confident`() {
++        val movie = episode("tt8", seed = 8, cueCount = 1_800, season = null, episode = null)
++        val wrong = withCues(movie, 100 to ep1.cues[105], 101 to ep1.cues[106], 700 to ep1.cues[120], 701 to ep1.cues[121])
++        val best = ClipMatcher.match(linesFrom(ep1, 100..130), listOf(wrong)).single()
++        assertTrue(best.hits >= 2 * ClipMatcher.MIN_HITS, "hits were ${best.hits}")
++        assertTrue(!best.confident)
++    }
++
++    @Test
++    fun `the winner needs twice the runner-up hits`() {
++        val clip = linesFrom(ep1, 100..120)
++        val half = withCues(ep2, *(100..110).map { it to ep1.cues[it] }.toTypedArray())
++        val quarter = withCues(ep2, *(100..104).map { it to ep1.cues[it] }.toTypedArray())
++        assertTrue(ClipMatcher.match(clip, listOf(ep1, half)).none { it.confident })
++        val result = ClipMatcher.match(clip, listOf(ep1, quarter))
++        assertEquals("tt1:1:1", result.first().videoId)
++        assertTrue(result.first().confident)
++    }
++
++    @Test
++    fun `second and third candidates also get a confidence`() {
++        val clip = linesFrom(ep1, 100..120)
++        val half = withCues(ep2, *(100..110).map { it to ep1.cues[it] }.toTypedArray())
++        val third = withCues(ep3, *(100..104).map { it to ep1.cues[it] }.toTypedArray())
++        val result = ClipMatcher.match(clip, listOf(ep1, half, third))
++        assertEquals(3, result.size)
++        assertTrue(result.all { it.confidence > 0.0 })
++        assertTrue(result[0].confidence > result[1].confidence && result[1].confidence > result[2].confidence)
++        assertTrue(result.drop(1).none { it.confident })
++    }
++
++    @Test
++    fun `a triple repeated more than three times is ignored`() {
++        val clip = listOf(ClipLine(ep1.cues[5].text, 0, 3_000), ClipLine(ep1.cues[6].text, 4_000, 7_000))
++        fun inEpisode(places: List<Int>) =
++            withCues(ep2, *places.flatMap { listOf(it to ep1.cues[5], it + 1 to ep1.cues[6]) }.toTypedArray())
++        assertEquals(emptyList(), ClipMatcher.match(clip, listOf(inEpisode(listOf(50, 150, 250, 350)))))
++        assertTrue(ClipMatcher.match(clip, listOf(inEpisode(listOf(50, 150, 250)))).isNotEmpty())
++    }
++
++    @Test
++    fun `a twenty second clip with four short lines matches its episode`() {
++        val lines = (300..303).map { i ->
++            ClipLine(ep2.cues[i].text.split(" ").take(4).joinToString(" "), (i - 300) * 5_000L, (i - 300) * 5_000L + 2_000)
++        }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:2", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep2.cues[300].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `in a season of stock phrases only the right episode is confident`() {
++        val stock = List(6) { s -> List(6) { vocabulary[100 + s * 6 + it] }.joinToString(" ") }
++        val season = (1..20).map { n ->
++            val base = episode("tt3:1:$n", seed = 100 + n, season = 1, episode = n)
++            // each episode says four of the six stock phrases, over two neighbouring cues each
++            val swaps = (0 until 4).flatMap { k ->
++                val s = (n + k) % 6
++                val at = 20 + k * 90 + n
++                listOf(at to SubtitleSyncCue(0, 0, stock[s]), at + 1 to SubtitleSyncCue(0, 0, stock[(s + 1) % 6]))
++            }
++            withCues(base, *swaps.toTypedArray())
++        }
++        val target = season[6]
++        val clip = linesFrom(target, 150..170) + stock.mapIndexed { i, t -> ClipLine(t, 100_000L + i * 3_000, 102_000L + i * 3_000) }
++        val result = ClipMatcher.match(clip, season)
++        assertEquals("tt3:1:7", result.first().videoId)
++        assertEquals(listOf(true, false, false), result.map { it.confident })
++        assertNear(target.cues[150].startTimeMs, result.first().startMs)
++    }
++
++    @Test
++    fun `subtitle noise is removed`() {
++        assertEquals(listOf("hello", "there"), ClipText.normalize("[music] Hello (LAUGHS) there"))
++        assertEquals(listOf("hello", "there"), ClipText.normalize("JOHN: hello there"))
++        assertEquals(listOf("hello", "there"), ClipText.normalize("- Hello\n- there"))
++        assertEquals(emptyList(), ClipText.normalize("♪ ♫ ♪"))
++        assertEquals(listOf("so", "far"), ClipText.normalize("♪ so far"))
++        assertEquals(listOf("in", "2008", "now"), ClipText.normalize("in 2 00 8 now"))
++        assertEquals(listOf("a", "1", "2"), ClipText.normalize("a 1, 2"))
++        assertEquals(listOf("the", "5", "6"), ClipText.normalize("the 5\n6"))
++        assertEquals(listOf("note", "was", "here"), ClipText.normalize("Note: was here"))
++        assertEquals(listOf("i", "told", "you", "one", "thing", "run"), ClipText.normalize("I TOLD YOU ONE THING: RUN"))
++        assertEquals(listOf("at", "10", "30", "we", "leave"), ClipText.normalize("AT 10:30 WE LEAVE"))
++        assertEquals(listOf("run"), ClipText.normalize("OLD MAN JO: RUN"))
++        assertEquals(listOf("open", "bracket"), ClipText.normalize("open (bracket"))
++    }
++
++    @Test
++    fun `a cue that becomes empty does not break triples across it`() {
++        val base = listOf("alpha one two", "[MUSIC]", "three four five")
++        val ep = EpisodeCues("n1", null, null, base.mapIndexed { i, t -> SubtitleSyncCue(i * 4_000L, i * 4_000L + 3_000, t) })
++        val clip = listOf(ClipLine("alpha one two", 0, 2_000), ClipLine("three four five", 3_000, 5_000))
++        val best = ClipMatcher.match(clip, listOf(ep)).single()
++        assertEquals(4, best.hits) // all four triples of the six words, two of them across the music cue
++        assertEquals(0L, best.startMs)
++    }
++}
