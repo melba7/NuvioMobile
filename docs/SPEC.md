@@ -43,8 +43,8 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
 - A1. At least one subtitle add-on is installed in Nuvio (subtitles are what we match against).
   OPEN: which one Mo has. Without one the moment can't be found.
 - A2. Reading the clip's audio straight from the link is possible but fragile and, on paper,
-  against the platforms' terms (automated reading). OPEN: Mo's OK (decision asked 2026-11-15).
-  If it is refused or breaks, features 1 to 9 still work through the saved video file.
+  against the platforms' terms (automated reading). Mo approved "link first" on 2026-11-15.
+  If it breaks, features 1 to 9 still work through the saved video file.
 - A3. Subtitle timing differs between releases by a few seconds, sometimes more. That is why
   playback starts 10 s early and the check in feature 5 is 20 s, not exact.
 - A4. Clips are often sped up, cut or mirrored. The matcher ignores order and speed; mirrored

@@ -1,7 +1,7 @@
 Done: 0 | Last cleanup: none | Mac builds used: 0 of about 5
 
-Waiting on Mo: OK for reading audio from the link (SPEC A2), 3 test clips + 1 movie clip,
-which subtitle add-on is installed (SPEC A1).
+Waiting on Mo: 3 test clips + 1 movie clip, which subtitle add-on is installed (SPEC A1).
+Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
 
 Rules for every milestone: edit only in the work tree, never open the `.patch` files, save
 with `fork/dev-tree.sh save`. Milestones 1 and 2 need no Mac build. Each later milestone ends
@@ -56,7 +56,6 @@ for milestone 4 or after a check fails twice.
     page) -> `ClipInfo`. Parsing is tested against saved sample responses in commonTest.
     `ClipAudio.swift`: load the platform's embed player off-screen, take the video's
     address from the page, read up to 90 s of audio into memory. Nothing written to disk.
-  - Only if Mo approved SPEC A2. If not approved, build the caption part only.
   - Done when: for Mo's test links Clip finder shows the caption and "audio: N seconds".
   - If audio fails for a platform after this one session: stop, write it under Known
     problems, and make that platform ask for the saved video instead. Do not keep trying.

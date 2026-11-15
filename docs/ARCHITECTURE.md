@@ -68,6 +68,7 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
 - 2026-11-15 | Matching logic in shared Kotlin with tests | tests run on Linux in about 10 min
   instead of a 70 min Mac build.
 - 2026-11-15 | Start 10 s early | subtitle timing differs between releases.
+- 2026-11-15 | Read clip audio from the link first, saved video as backup | Mo's choice; one tap.
 
 ## Known problems
 - No Mac in the cloud: Swift code can only be compiled by the TestFlight workflow (70 min).
