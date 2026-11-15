@@ -87,12 +87,13 @@ jobs:
         run: |
           mkdir -p state && chmod 700 state
           umask 077
-          printf '%s\n' "$ASC_KEY_P8" > "state/AuthKey_$ASC_KEY_ID.p8"
           python3 - <<'PY'
           import json, os
           kid = os.environ["ASC_KEY_ID"].strip()
-          json.dump({"key_id": kid, "issuer_id": os.environ["ASC_ISSUER_ID"].strip().lower(),
-                     "p8_path": os.path.abspath("state/AuthKey_%s.p8" % kid)},
+          path = os.path.abspath("state/AuthKey_%s.p8" % "".join(c for c in kid if c.isalnum()))
+          with open(path, "w") as f:
+              f.write(os.environ["ASC_KEY_P8"].strip() + "\n")
+          json.dump({"key_id": kid, "issuer_id": os.environ["ASC_ISSUER_ID"].strip().lower(), "p8_path": path},
                     open("state/config.json", "w"), indent=2)
           PY
           if [ -n "$NUVIO_SIGNING" ]; then
@@ -101,6 +102,11 @@ jobs:
           else
             echo "NUVIO_EPHEMERAL_CERT=1" >> "$GITHUB_ENV"
           fi
+
+      # An hour of building is wasted if Apple then refuses the key, so ask Apple first.
+      - name: Check the App Store Connect key
+        working-directory: fork
+        run: python3 preflight.py < /dev/null
 
       - name: Build, sign and upload
         working-directory: fork
