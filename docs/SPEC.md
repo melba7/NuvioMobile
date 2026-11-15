@@ -1,23 +1,54 @@
-# Share-to-resume (Nuvio iPhone fork)
+# Clip finder: share a clip to Nuvio, resume at that moment
 
-Goal: share a TikTok/Instagram clip to Nuvio from the iOS share sheet; Nuvio finds the show, episode and moment, and starts playback there.
+Goal: Mo shares a TikTok or Instagram clip of a show or movie to Nuvio from the iOS share sheet.
+Nuvio works out the show, the episode and the moment, then plays the episode from there.
+
+User: Mo, on iPhone, through his own TestFlight build of this fork.
 
 ## Decisions (Mo, 2026-11-15)
-- Entry: Nuvio appears in the iOS share sheet; receives the link.
-- No API key and no Claude usage in the app. Everything runs on the iPhone (Apple Vision OCR, Apple Speech) plus Nuvio's own metadata/subtitle sources. (Claude plan cannot be used by a third-party app.)
-- Playback: Nuvio's normal stream list, seeking to the matched time.
-- iPhone only. Clips with a little background music should still work (best effort).
+- Entry point is the iOS share sheet: share the **link**, pick Nuvio.
+- The app never uses Claude or any paid AI. All recognition runs on the phone (Apple Speech and
+  Apple Vision). A Claude plan cannot power an app; only a pay-per-use API key could, and we
+  don't want one.
+- Playback uses Nuvio's normal stream list, then jumps to the matched time.
+- iPhone only. A little background music must not break it.
 
-## Features (each: pass/fail check)
-1. The user can pick Nuvio in the share sheet on a TikTok/Instagram link. Check: Nuvio opens with the link.
-2. The user sees up to 3 candidate shows/episodes with confidence. Check: a known test clip lists the right episode in the top 3.
-3. The user taps a candidate and playback starts at the matched time (within ~5 s). Check: manual test on 3 known clips.
-4. If nothing matches, the user can search manually and still set a start time.
+## Features
+1. The user can pick Nuvio in the share sheet for a TikTok or Instagram link.
+   Check: Nuvio opens on the Clip finder screen showing that link.
+2. The user can also send Nuvio a saved video file (Photos, Files) as a backup route.
+   Check: sharing a saved clip opens the same screen.
+3. The user sees progress in plain words (Reading link, Listening, Searching episodes).
+   Check: each stage appears and none hangs longer than 60 s without a message.
+4. The user sees up to 3 candidates (show, season, episode, time, confidence).
+   Check: for each of Mo's 3 test clips the right episode is the top candidate.
+5. The user can tap a candidate, pick a stream as usual, and playback starts about 10 s before
+   the matched moment. Check: on the 3 test clips the scene is on screen within 20 s of starting.
+6. The user can choose "from clip start" or "after the clip" (default: after the clip).
+   Check: both start points differ by the clip's length.
+7. If the show can't be guessed, the user can type the show name and the rest stays automatic.
+   Check: a clip with an empty caption still reaches the right episode after typing the show.
+8. If nothing matches, the user is told why (no speech found, no subtitles found, no match) and
+   nothing plays. Check: a music-only clip ends with "no speech found".
+9. Works for movies as well as series. Check: one movie test clip finds its moment.
 
 ## Out of scope (v1)
-Silent or music-only clips; Android; downloading videos from the platforms by bypassing their rules.
+- Android, iPad layout, desktop.
+- Clips with no speech and no on-screen captions.
+- Languages other than the one the user's subtitles are in (English first).
+- Any Claude or cloud AI call from the app. Any account login to TikTok or Instagram.
+- Saving or re-sharing the clip. Audio is analysed in memory and dropped.
 
-## Open risks / assumptions
-- A link alone gives caption, hashtags and thumbnail, not the video. Plan: caption/hashtags -> title guess; thumbnail OCR for burned-in subtitles; if still unsure, ask the user to share the saved video file, whose audio is transcribed on-device.
-- Moment match = fuzzy-match the transcribed/OCR'd lines against the episode's subtitles (existing subtitle sources/autosync code, see docs/subtitle-autosync.md).
-- Features ship as a patch (fork/nuvio-share-resume.patch) applied to the upstream tag; pushing it triggers TestFlight.
+## Assumptions and open questions
+- A1. At least one subtitle add-on is installed in Nuvio (subtitles are what we match against).
+  OPEN: which one Mo has. Without one the moment can't be found.
+- A2. Reading the clip's audio straight from the link is possible but fragile and, on paper,
+  against the platforms' terms (automated reading). OPEN: Mo's OK (decision asked 2026-11-15).
+  If it is refused or breaks, features 1 to 9 still work through the saved video file.
+- A3. Subtitle timing differs between releases by a few seconds, sometimes more. That is why
+  playback starts 10 s early and the check in feature 5 is 20 s, not exact.
+- A4. Clips are often sped up, cut or mirrored. The matcher ignores order and speed; mirrored
+  burned-in captions are not read.
+- A5. Opening the app from a share extension is not an official Apple feature. Fallback: the
+  extension posts a notification that opens Nuvio when tapped.
+- OPEN: Mo's 3 test clips (link, show, season, episode, rough time), plus one movie clip.
