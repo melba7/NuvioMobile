@@ -28,6 +28,14 @@ cd "$TREE"
 [ -f local.properties ] || touch local.properties
 if ! ./gradlew --console=plain --no-daemon :composeApp:testAndroidHostTest "${TESTS[@]}" >"$LOG" 2>&1; then
   grep -v "^> Task .*\(UP-TO-DATE\|NO-SOURCE\)$" "$LOG" | grep -E -A12 "FAILED|^e: |What went wrong" | head -n 60 || true
+  python3 - "$TREE/composeApp/build/test-results" <<'PY' || true
+import glob, sys
+import xml.etree.ElementTree as ET
+for f in glob.glob(sys.argv[1] + "/**/*.xml", recursive=True):
+    for tc in ET.parse(f).getroot().iter("testcase"):
+        for bad in list(tc.findall("failure")) + list(tc.findall("error")):
+            print("FAILED %s.%s: %s" % (tc.get("classname"), tc.get("name"), (bad.get("message") or "")[:300]))
+PY
   tail -n 15 "$LOG"
   echo "CHECK FAILED: patches apply, tests did not pass"
   exit 1
