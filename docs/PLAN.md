@@ -1,4 +1,4 @@
-Done: 1 | Last cleanup: none | Mac builds used: 0 of about 5
+Done: 2 | Last cleanup: none | Mac builds used: 0 of about 5
 
 Waiting on Mo: 1 movie clip with its name and rough time.
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
@@ -24,7 +24,7 @@ for milestone 4 or after a check fails twice.
   - Files: fork/dev-tree.sh, fork/check.sh, fork/build_from_source.py, fork/check_upstream.py,
     .github/workflows/fork-check.yml, CLAUDE.md, work tree AppUrlBridge.kt + its test.
 
-- [ ] **2. The matcher** (no Mac build)
+- [x] **2. The matcher** (no Mac build)
   - Build in `features/clipfinder/`: `ClipText.normalize` (lowercase, strip punctuation and
     filler), `ClipMatcher.match(lines, episodes)` using word triples: index each episode's
     cues, count distinct triple hits inside a sliding window (clip length x 2), rank by hits

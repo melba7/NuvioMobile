@@ -73,6 +73,8 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
   language-neutral (Unicode-aware normalising, no English-only word lists baked in).
 - 2026-11-15 | Start 10 s early | subtitle timing differs between releases.
 - 2026-11-15 | Read clip audio from the link first, saved video as backup | Mo's choice; one tap.
+- 2026-11-15 | Matcher: distinct word triples, no fixed window; a hit counts if another hit is within
+  45 s; confident = 4+ hits and 2x the runner-up | clips are compilations with jumps.
 
 ## Known problems
 - Mac test 2026-11-15 (3 real clips): one Speech request on a long file returns only the last
