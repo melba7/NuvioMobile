@@ -3319,10 +3319,10 @@ index 0000000..e557f67
 +}
 diff --git a/iosApp/iosApp/ClipFinder/ClipFinderNativeImpl.swift b/iosApp/iosApp/ClipFinder/ClipFinderNativeImpl.swift
 new file mode 100644
-index 0000000..f216ee2
+index 0000000..81166e0
 --- /dev/null
 +++ b/iosApp/iosApp/ClipFinder/ClipFinderNativeImpl.swift
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,221 @@
 +import Foundation
 +import ComposeApp
 +
@@ -3517,7 +3517,8 @@ index 0000000..f216ee2
 +    private func file(_ key: String) -> URL {
 +        var safe = ""
 +        for character in key.prefix(120) {
-+            safe.append(character.isLetter || character.isNumber || character == "-" || character == "." ? character : "_")
++            let ok = character.isLetter || character.isNumber || character == "-" || character == "."
++            safe.append(ok ? character : "_")
 +        }
 +        return folder.appendingPathComponent(safe + ".txt")
 +    }
@@ -3678,10 +3679,10 @@ index 0000000..4eb1354
 +}
 diff --git a/iosApp/iosApp/ClipFinder/ClipPageReader.swift b/iosApp/iosApp/ClipFinder/ClipPageReader.swift
 new file mode 100644
-index 0000000..13514f3
+index 0000000..6d7d688
 --- /dev/null
 +++ b/iosApp/iosApp/ClipFinder/ClipPageReader.swift
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,178 @@
 +import Foundation
 +import UIKit
 +import WebKit
@@ -3702,6 +3703,7 @@ index 0000000..13514f3
 +    (function () {
 +      var out = { url: location.href, title: document.title || '', metas: {}, videos: [], scripts: [] };
 +      var known = false;
++      if (location.protocol !== 'http:' && location.protocol !== 'https:') { return ''; }
 +      try {
 +        var metas = document.querySelectorAll('meta[property], meta[name]');
 +        for (var i = 0; i < metas.length; i++) {
