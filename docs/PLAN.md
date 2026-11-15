@@ -1,4 +1,4 @@
-Done: 0 | Last cleanup: none | Mac builds used: 0 of about 5
+Done: 1 | Last cleanup: none | Mac builds used: 0 of about 5
 
 Waiting on Mo: 3 test clips + 1 movie clip, which subtitle add-on is installed (SPEC A1).
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
@@ -8,7 +8,7 @@ with `fork/dev-tree.sh save`. Milestones 1 and 2 need no Mac build. Each later m
 with exactly one merge to `cmp-rewrite` (one Mac build). Suggested model: Sonnet; use Fable
 for milestone 4 or after a check fails twice.
 
-- [ ] **1. Dev loop and fast check** (no Mac build)
+- [x] **1. Dev loop and fast check** (no Mac build)
   - Build: `fork/dev-tree.sh` (clone NuvioMedia/NuvioMobile at `fork/UPSTREAM_TAG` into
     `../nuvio-work`, apply the patches in `PATCHES` order, commit as baseline;
     `fork/dev-tree.sh save` writes the diff since baseline to `fork/nuvio-share-resume.patch`).
