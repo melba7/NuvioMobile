@@ -32,7 +32,8 @@ Current work: Clip finder (share a TikTok/Instagram clip, resume the episode at 
 ## Fork notes
 - Original: NuvioMedia/NuvioMobile. Branch here: `cmp-rewrite`.
 - Changed by Mo's fork: everything in `fork/`, `.github/workflows/`, `FORK.md`, `docs/`.
-- Patches, in order: nuvio-public-gcm, nuvio-downloads, nuvio-downloads-2, nuvio-share-resume.
+- Patches, in order: nuvio-public-gcm, nuvio-downloads, nuvio-downloads-2,
+  nuvio-downloads-3, nuvio-share-resume (always last).
 
 ## WORKFLOW (tech-lead v3)
 When I say "next":

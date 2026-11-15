@@ -41,8 +41,9 @@ if os.path.exists(_tag_file):  # the GitHub fork keeps the tested tag here; its 
     with open(_tag_file) as _f:
         SOURCE_TAG = _f.read().strip() or SOURCE_TAG
 DOWNLOADS_PATCH_2 = os.path.join(HERE, "nuvio-downloads-2.patch")
+DOWNLOADS_PATCH_3 = os.path.join(HERE, "nuvio-downloads-3.patch")
 SHARE_RESUME_PATCH = os.path.join(HERE, "nuvio-share-resume.patch")  # Clip finder, applied last
-PATCHES = (PATCH, DOWNLOADS_PATCH, DOWNLOADS_PATCH_2, SHARE_RESUME_PATCH)
+PATCHES = (PATCH, DOWNLOADS_PATCH, DOWNLOADS_PATCH_2, DOWNLOADS_PATCH_3, SHARE_RESUME_PATCH)
 REPO = "https://github.com/NuvioMedia/NuvioMobile.git"
 BUILD_LOG = os.path.join(tf.STATE, "build.log")
 PRIVATE_SYMBOLS = (b"CCCryptorGCMEncrypt", b"CCCryptorGCMDecrypt", b"CCCryptorGCMFinal", b"CCCryptorGCMAddAAD")
