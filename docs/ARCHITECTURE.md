@@ -75,6 +75,9 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
 - 2026-11-15 | Read clip audio from the link first, saved video as backup | Mo's choice; one tap.
 - 2026-11-15 | Matcher: distinct word triples, no fixed window; a hit counts if another hit is within
   45 s; confident = 4+ hits and 2x the runner-up | clips are compilations with jumps.
+- 2026-11-15 | Start/end: a cluster is substantial with 4+ distinct hits from 3+ cues; span = earliest
+  to latest substantial cluster, hits = total over them (none substantial: biggest cluster) |
+  a share-of-hits cut dropped real compilation segments; a lone stray phrase stays ignored.
 
 ## Known problems
 - Mac test 2026-11-15 (3 real clips): one Speech request on a long file returns only the last

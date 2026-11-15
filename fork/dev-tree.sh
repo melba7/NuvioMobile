@@ -8,7 +8,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TREE="${NUVIO_WORK:-$HERE/../../nuvio-work}"
 TAG="$(tr -d '[:space:]' < "$HERE/UPSTREAM_TAG")"
 # The patch list lives in PATCHES in build_from_source.py (the last one is the Clip finder patch).
-mapfile -t ALL_PATCHES < <(python3 -B -c 'import os, sys; sys.path.insert(0, sys.argv[1]); import build_from_source as b; print("\n".join(os.path.basename(p)[:-len(".patch")] for p in b.PATCHES))' "$HERE")
+ALL_PATCHES=()
+while IFS= read -r line; do ALL_PATCHES+=("$line"); done < <(python3 -B -c 'import os, sys; sys.path.insert(0, sys.argv[1]); import build_from_source as b; print("\n".join(os.path.basename(p)[:-len(".patch")] for p in b.PATCHES))' "$HERE")
 [ "${#ALL_PATCHES[@]}" -ge 2 ] || { echo "could not read PATCHES from build_from_source.py" >&2; exit 1; }
 OLD_PATCHES=("${ALL_PATCHES[@]:0:${#ALL_PATCHES[@]}-1}")
 NEW_PATCH="$HERE/${ALL_PATCHES[${#ALL_PATCHES[@]}-1]}.patch"

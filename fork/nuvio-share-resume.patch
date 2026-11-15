@@ -54,10 +54,10 @@ index 5f8e33f..c9e5ba7 100644
          ?.let(::normalizeDeepLinkMediaType)
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
 new file mode 100644
-index 0000000..5c524b3
+index 0000000..2039549
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,119 @@
 +package com.nuvio.app.features.clipfinder
 +
 +object ClipMatcher {
@@ -71,6 +71,9 @@ index 0000000..5c524b3
 +    /** Triples that occur more often than this in one episode are stock phrases: ignored. */
 +    private const val MAX_OCCURRENCES = 3
 +
++    /** A cluster is substantial (a real scene of the clip) with this many hits from this many cues. */
++    private const val MIN_CUES = 3
++
 +    private class Occurrence(val key: String, val startMs: Long, val endMs: Long, val cue: Int)
 +    private class Scored(val candidate: ClipCandidate, val mainHits: Int)
 +
@@ -78,9 +81,10 @@ index 0000000..5c524b3
 +     * Scores each episode by its distinct word triples shared with the clip. A hit counts only
 +     * when a different triple from a different cue lies within 45 s, so one repeated phrase
 +     * cannot vouch for itself. Counted hits are grouped into time clusters (gap over 60 s starts
-+     * a new one). Clips can be compilations, so every cluster holding at least a quarter of the
-+     * episode's hits is part of the match, and a lone repeated line elsewhere is not: the span
-+     * runs from the earliest such cluster to the latest. Best-first; only the best can be
++     * a new one). Clips can be compilations of several scenes, so every substantial cluster (4+
++     * distinct hits from 3+ cues) is part of the match and a lone stray phrase is not: the span
++     * runs from the earliest substantial cluster to the latest, and hits are totalled over them.
++     * With no substantial cluster the biggest one is used. Best-first; only the best can be
 +     * [ClipCandidate.confident]: at least 4 hits in its biggest cluster, hits of at least 15% of
 +     * the clip's distinct triples, and at least twice the runner-up's hits.
 +     */
@@ -123,10 +127,9 @@ index 0000000..5c524b3
 +
 +        val clusters = groupByTime(kept)
 +        fun hits(c: List<Occurrence>) = c.map { it.key }.toSet().size
-+        val total = kept.map { it.key }.toSet().size
 +        val main = clusters.maxByOrNull { hits(it) }!! // first (earliest) on a tie
-+        val part = clusters.filter { it === main || hits(it) * 4 >= total }
-+        val spanned = part.flatten()
++        val substantial = clusters.filter { hits(it) >= MIN_HITS && it.map { o -> o.cue }.toSet().size >= MIN_CUES }
++        val spanned = (substantial.ifEmpty { listOf(main) }).flatten()
 +        return Scored(
 +            ClipCandidate(
 +                videoId = ep.videoId,
@@ -211,10 +214,10 @@ index 0000000..5784ff0
 +)
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt
 new file mode 100644
-index 0000000..670268a
+index 0000000..b052c4c
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipText.kt
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,97 @@
 +package com.nuvio.app.features.clipfinder
 +
 +object ClipText {
@@ -223,6 +226,7 @@ index 0000000..670268a
 +    /** Characters that may start a subtitle line without being words: dashes and music notes. */
 +    private val lineMarks = setOf('-', '‐', '–', '—', '•', '♪', '♫')
 +    private const val MAX_LABEL_LENGTH = 24
++    private const val MAX_LABEL_WORDS = 3
 +
 +    /**
 +     * Lowercase words made of letters or digits of any script. Apostrophes are dropped without
@@ -288,14 +292,23 @@ index 0000000..670268a
 +        return out.toString()
 +    }
 +
-+    /** Drops leading dashes/notes and a leading "SPEAKER:" label (capitals, digits, space, . - ' _ only). */
++    /**
++     * Drops leading dashes/notes and a leading "SPEAKER:" label (1-3 words of capitals, digits,
++     * . - ' _ only, and whitespace after the colon, so "AT 10:30 WE LEAVE" keeps its words).
++     */
 +    private fun withoutLabel(line: String): String {
 +        val body = line.trimStart { it.isWhitespace() || it in lineMarks }
 +        val colon = body.indexOf(':')
 +        if (colon < 1 || colon > MAX_LABEL_LENGTH) return body
 +        val label = body.substring(0, colon)
 +        val shaped = label.all { it.isUpperCase() || it.isDigit() || it.isWhitespace() || it in ".-'_" }
-+        return if (shaped && label.any { it.isUpperCase() }) body.substring(colon + 1) else body
++        val labelWords = label.split(' ', '\t').count { it.isNotEmpty() }
++        val spaceAfter = colon + 1 >= body.length || body[colon + 1].isWhitespace()
++        return if (shaped && label.any { it.isUpperCase() } && labelWords <= MAX_LABEL_WORDS && spaceAfter) {
++            body.substring(colon + 1)
++        } else {
++            body
++        }
 +    }
 +
 +    /** Every run of three neighbouring words, joined by a space. */
@@ -358,10 +371,10 @@ index a1e48f9..73c7e16 100644
  }
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
 new file mode 100644
-index 0000000..67633df
+index 0000000..5cb8884
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,329 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleSyncCue
@@ -502,6 +515,30 @@ index 0000000..67633df
 +        assertTrue(best.confident)
 +        assertNear(ep1.cues[20].startTimeMs, best.startMs)
 +        assertNear(ep1.cues[310].endTimeMs, best.endMs)
++    }
++
++    private fun assertCompilationStartsAtFirst(starts: List<Int>, base: EpisodeCues = ep1) {
++        val lines = starts.flatMap { linesFrom(base, it..it + 10) }
++        val best = ClipMatcher.match(lines, listOf(base, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(base.cues[starts.first()].startTimeMs, best.startMs)
++        assertNear(base.cues[starts.last() + 10].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `compilation of four equal segments starts at the first one`() =
++        assertCompilationStartsAtFirst(listOf(20, 100, 180, 260))
++
++    @Test
++    fun `compilation of six equal segments starts at the first one`() =
++        assertCompilationStartsAtFirst(listOf(20, 80, 140, 200, 260, 320))
++
++    @Test
++    fun `compilation with one stray stock phrase earlier keeps the first real segment`() {
++        // Cues 10 and 11 (0:40) repeat two lines of the third segment; they are one tiny cluster.
++        val stray = withCues(ep1, 10 to ep1.cues[205], 11 to ep1.cues[206])
++        assertCompilationStartsAtFirst(listOf(100, 200, 300), stray)
 +    }
 +
 +    @Test
@@ -651,6 +688,9 @@ index 0000000..67633df
 +        assertEquals(listOf("a", "1", "2"), ClipText.normalize("a 1, 2"))
 +        assertEquals(listOf("the", "5", "6"), ClipText.normalize("the 5\n6"))
 +        assertEquals(listOf("note", "was", "here"), ClipText.normalize("Note: was here"))
++        assertEquals(listOf("i", "told", "you", "one", "thing", "run"), ClipText.normalize("I TOLD YOU ONE THING: RUN"))
++        assertEquals(listOf("at", "10", "30", "we", "leave"), ClipText.normalize("AT 10:30 WE LEAVE"))
++        assertEquals(listOf("run"), ClipText.normalize("OLD MAN JO: RUN"))
 +        assertEquals(listOf("open", "bracket"), ClipText.normalize("open (bracket"))
 +    }
 +

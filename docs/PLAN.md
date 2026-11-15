@@ -96,6 +96,7 @@ for milestone 4 or after a check fails twice.
   - Build: type-the-show fallback (SPEC 7), clear failure messages (SPEC 8), 60 s stage
     limit with a message, tune matcher thresholds on Mo's real clips, add a Clip finder
     section to FORK.md.
+  - Tune the 15% clip-share bar on Mo's real clips. In simulation, correct matches on noisy 6-min clips (45% wrong words) were confident only 72% of the time. Consider measuring share against matchable lines.
   - Done when: every SPEC check passes on the phone.
   - Try it: one clip of each kind: named show, no caption, music only, movie.
   - Files: clipfinder/*, FORK.md.

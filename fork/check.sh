@@ -22,7 +22,8 @@ CLEAN_PARENT="$(mktemp -d)"
 CLEAN="$CLEAN_PARENT/clean"
 git -C "$TREE" worktree add -q --detach "$CLEAN" fork-baseline^ >"$LOG" 2>&1 || fail "could not check out upstream"
 # the patch list lives in PATCHES in build_from_source.py
-mapfile -t PATCH_NAMES < <(python3 -B -c 'import os, sys; sys.path.insert(0, sys.argv[1]); import build_from_source as b; print("\n".join(os.path.basename(p) for p in b.PATCHES))' "$HERE")
+PATCH_NAMES=()
+while IFS= read -r line; do PATCH_NAMES+=("$line"); done < <(python3 -B -c 'import os, sys; sys.path.insert(0, sys.argv[1]); import build_from_source as b; print("\n".join(os.path.basename(p) for p in b.PATCHES))' "$HERE")
 [ "${#PATCH_NAMES[@]}" -ge 1 ] || fail "could not read PATCHES from build_from_source.py"
 for p in "${PATCH_NAMES[@]}"; do
   git -C "$CLEAN" apply --whitespace=nowarn "$HERE/$p" >"$LOG" 2>&1 || fail "$p does not apply"
