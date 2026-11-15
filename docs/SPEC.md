@@ -35,13 +35,12 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
 ## Out of scope (v1)
 - Android, iPad layout, desktop.
 - Clips with no speech and no on-screen captions.
-- Languages other than the one the user's subtitles are in (English first).
+- Languages other than English. Arabic comes right after v1 (milestone 8).
 - Any Claude or cloud AI call from the app. Any account login to TikTok or Instagram.
 - Saving or re-sharing the clip. Audio is analysed in memory and dropped.
 
 ## Assumptions and open questions
-- A1. At least one subtitle add-on is installed in Nuvio (subtitles are what we match against).
-  OPEN: which one Mo has. Without one the moment can't be found.
+- A1. A subtitle add-on is installed. Mo has OpenSubtitles v3 (confirmed 2026-11-15).
 - A2. Reading the clip's audio straight from the link is possible but fragile and, on paper,
   against the platforms' terms (automated reading). Mo approved "link first" on 2026-11-15.
   If it breaks, features 1 to 9 still work through the saved video file.
@@ -51,4 +50,5 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
   burned-in captions are not read.
 - A5. Opening the app from a share extension is not an official Apple feature. Fallback: the
   extension posts a notification that opens Nuvio when tapped.
-- OPEN: Mo's 3 test clips (link, show, season, episode, rough time), plus one movie clip.
+- Test clips: 3 TikToks from Mo (links kept out of this public repo). Answers so far: South
+  Park S14E02; Suits (episode unknown); Love Is Blind: Habibi (Arabic). OPEN: a movie clip.

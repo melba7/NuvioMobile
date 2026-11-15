@@ -38,10 +38,12 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
    so no App Group to set up). Saved video files arrive through "Open in Nuvio" (document
    type on the main app), also no extension storage.
 2. `ClipLinkReader` (Kotlin): caption, hashtags, author, thumbnail from the platform's public
-   embed info. Short links are followed first.
-3. `ClipAudio` (Swift): audio for up to 90 s, from the link's embed player or from the shared
+   page metadata (TikTok's public oEmbed no longer returns caption or author, checked
+   2026-11-15). Short links are followed first.
+3. `ClipAudio` (Swift): audio for up to 6 min (clips are often 5-6 min), from the link's embed player or from the shared
    file. Held in memory only.
-4. `ClipTranscriber` (Swift): Apple Speech (on-device only) -> lines with clip times. Apple
+4. `ClipTranscriber` (Swift): normalise loudness, split into 30 s chunks, Apple Speech
+   (on-device only) per chunk with time offsets added -> lines with clip times. Apple
    Vision reads burned-in captions from about 1 frame per second. Both lists go to Kotlin.
 5. `ShowGuesser` (Kotlin): caption words and hashtags -> Nuvio search -> up to 3 shows. A
    "S2E5"-style hint in the caption is tried first.
@@ -67,10 +69,15 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
   signing script's API key; this avoids manual Apple portal setup.
 - 2026-11-15 | Matching logic in shared Kotlin with tests | tests run on Linux in about 10 min
   instead of a 70 min Mac build.
+- 2026-11-15 | English first; Arabic is the first milestone after v1 | Mo. Keep the matcher
+  language-neutral (Unicode-aware normalising, no English-only word lists baked in).
 - 2026-11-15 | Start 10 s early | subtitle timing differs between releases.
 - 2026-11-15 | Read clip audio from the link first, saved video as backup | Mo's choice; one tap.
 
 ## Known problems
+- Mac test 2026-11-15 (3 real clips): one Speech request on a long file returns only the last
+  utterance; 30 s chunks fixed it. A clip at -33 dB needed loudness normalisation. Background
+  music cost some words but left plenty to match. Arabic clip: en-US found nothing.
 - No Mac in the cloud: Swift code can only be compiled by the TestFlight workflow (70 min).
 - tiktok.com and instagram.com are blocked from the cloud workspace; link reading is tested
   with saved sample responses, and live on the phone.

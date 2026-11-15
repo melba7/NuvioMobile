@@ -1,6 +1,6 @@
 Done: 1 | Last cleanup: none | Mac builds used: 0 of about 5
 
-Waiting on Mo: 3 test clips + 1 movie clip, which subtitle add-on is installed (SPEC A1).
+Waiting on Mo: 1 movie clip with its name and rough time.
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
 
 Rules for every milestone: edit only in the work tree, never open the `.patch` files, save
@@ -52,10 +52,11 @@ for milestone 4 or after a check fails twice.
   - Wait for OK before starting (touches 3+ files and signing).
 
 - [ ] **4. Read the link** (Mac build 2; the riskiest step, one session only)
-  - Build: `ClipLinkReader` (follow short links; TikTok public embed info; Instagram embed
+  - Build: `ClipLinkReader` (follow short links; caption from the TikTok page metadata, since
+    oEmbed no longer has it; Instagram embed
     page) -> `ClipInfo`. Parsing is tested against saved sample responses in commonTest.
     `ClipAudio.swift`: load the platform's embed player off-screen, take the video's
-    address from the page, read up to 90 s of audio into memory. Nothing written to disk.
+    address from the page, read up to 6 min of audio into memory. Nothing written to disk.
   - Done when: for Mo's test links Clip finder shows the caption and "audio: N seconds".
   - If audio fails for a platform after this one session: stop, write it under Known
     problems, and make that platform ask for the saved video instead. Do not keep trying.
@@ -64,7 +65,9 @@ for milestone 4 or after a check fails twice.
 
 - [ ] **5. Hear and read the clip** (Mac build 3)
   - Build: `ClipTranscriber.swift`: Apple Speech with on-device recognition required, for
-    link audio and for a shared video file (audio pulled with AVFoundation). Apple Vision
+    link audio and for a shared video file (audio pulled with AVFoundation). Normalise
+    loudness, then recognise 30 s chunks and add each chunk's offset (one request on a long
+    file only returns the last sentence; seen on the Mac 2026-11-15). Apple Vision
     text recognition on about 1 frame per second of a shared file for burned-in captions.
     Merge into `ClipLine`s and pass to Kotlin. Add the Info.plist permission text. Check
     Apple's current docs for the newest on-device speech API before coding.
@@ -94,6 +97,10 @@ for milestone 4 or after a check fails twice.
   - Done when: every SPEC check passes on the phone.
   - Try it: one clip of each kind: named show, no caption, music only, movie.
   - Files: clipfinder/*, FORK.md.
+
+- [ ] **8. Arabic** (after v1 ships; Mo wants it). Speech locale picked from the show's
+  language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
+  (diacritics, letter forms). Test clip: Love Is Blind: Habibi (on Mo's Mac).
 
 ## Later (parked, not v1)
 - "Listen" mode: Nuvio records ~10 s of any app's sound through iOS screen broadcast. Works
