@@ -1,0 +1,133 @@
+# Builds Nuvio (upstream release in fork/UPSTREAM_TAG + the patches in fork/) on a GitHub Mac
+# and uploads it to TestFlight. Runs after every change under fork/, after the nightly upstream
+# check moves to a new release, and by hand from the Actions tab. Setup: FORK.md.
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: macOS runner (pick another if the build waits too long for a machine)
+        type: choice
+        options: [macos-26, macos-15]
+        default: macos-26
+  push:
+    branches: [cmp-rewrite]
+    paths:
+      - "fork/**"
+      - ".github/workflows/testflight.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  # Never cancel a run halfway: it may hold a temporary signing certificate.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and upload
+    runs-on: ${{ inputs.macos || 'macos-26' }}
+    timeout-minutes: 240
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      NUVIO_SIGNING: ${{ secrets.NUVIO_SIGNING }}
+      GRADLE_OPTS: -Dfile.encoding=UTF-8
+    steps:
+      - name: Check the secrets
+        run: |
+          missing=()
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error title=TestFlight is not set up yet::Missing repository secrets: ${missing[*]}. See FORK.md."
+            exit 1
+          fi
+          if [ -z "$NUVIO_SIGNING" ]; then
+            echo "::notice title=No stored certificate::NUVIO_SIGNING is not set, so this build makes a temporary distribution certificate and revokes it at the end. See FORK.md."
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: fork
+
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_[0-9]*.app | grep -vi beta | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          major=$(xcodebuild -version | sed -nE 's/^Xcode ([0-9]+).*/\1/p')
+          if [ "$major" -lt 27 ]; then
+            echo "::warning title=Old Xcode::This runner's newest Xcode is $major. Nuvio's own builds use Xcode 27.1; if the build fails, run again with another macOS runner."
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('fork/UPSTREAM_TAG') }}
+          restore-keys: konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Write the App Store Connect settings
+        working-directory: fork
+        run: |
+          mkdir -p state && chmod 700 state
+          umask 077
+          printf '%s\n' "$ASC_KEY_P8" > "state/AuthKey_$ASC_KEY_ID.p8"
+          python3 - <<'PY'
+          import json, os
+          kid = os.environ["ASC_KEY_ID"].strip()
+          json.dump({"key_id": kid, "issuer_id": os.environ["ASC_ISSUER_ID"].strip().lower(),
+                     "p8_path": os.path.abspath("state/AuthKey_%s.p8" % kid)},
+                    open("state/config.json", "w"), indent=2)
+          PY
+          if [ -n "$NUVIO_SIGNING" ]; then
+            printf '%s' "$NUVIO_SIGNING" | base64 --decode | tar -xz -C state
+            ls state/dist.json state/dist.key state/dist.cer >/dev/null
+          else
+            echo "NUVIO_EPHEMERAL_CERT=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build, sign and upload
+        working-directory: fork
+        run: |
+          python3 build_from_source.py < /dev/null 2>&1 | tee build-output.txt
+          exit ${PIPESTATUS[0]}
+
+      - name: Summary
+        if: always()
+        working-directory: fork
+        run: |
+          {
+            echo "## Nuvio $(cat UPSTREAM_TAG)"
+            echo '```'
+            tail -n 25 build-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            fork/state/build.log
+            fork/state/last-run.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Remove secrets from the runner
+        if: always()
+        run: rm -rf fork/state

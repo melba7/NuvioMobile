@@ -1,0 +1,408 @@
+diff --git a/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginAesGcm.kt b/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginAesGcm.kt
+new file mode 100644
+index 0000000..3f8a1bf
+--- /dev/null
++++ b/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginAesGcm.kt
+@@ -0,0 +1,156 @@
++package com.nuvio.app.features.plugins
++
++/**
++ * AES-GCM (NIST SP 800-38D) built on a raw AES block-encrypt function.
++ *
++ * CommonCrypto's own GCM functions (CCCryptorGCMEncrypt/Decrypt/Final) are not public API, and
++ * App Store Connect rejects builds that link them (ITMS-90338). AES-ECB is public, so the iOS
++ * side supplies that and this class does the counter mode and GHASH itself.
++ *
++ * Output format matches the previous iOS code and the Android implementation
++ * (javax.crypto "AES/GCM/NoPadding", 128-bit tag): ciphertext followed by a 16-byte tag, no AAD.
++ *
++ * @param encryptBlocks AES-encrypts its input (a whole number of 16-byte blocks) in ECB mode
++ *                      with the caller's key and returns the result.
++ */
++internal class AesGcm(private val encryptBlocks: (ByteArray) -> ByteArray) {
++
++    fun seal(iv: ByteArray, plaintext: ByteArray): ByteArray {
++        val h = hashSubkey()
++        val j0 = preCounterBlock(h, iv)
++        val ciphertext = counterMode(j0, plaintext)
++        return ciphertext + tag(h, j0, ciphertext)
++    }
++
++    fun open(iv: ByteArray, sealed: ByteArray): ByteArray {
++        require(sealed.size >= TAG_LENGTH) { "Data too short for GCM decryption" }
++        val ciphertextLength = sealed.size - TAG_LENGTH
++        val ciphertext = sealed.copyOfRange(0, ciphertextLength)
++        val h = hashSubkey()
++        val j0 = preCounterBlock(h, iv)
++        val expected = tag(h, j0, ciphertext)
++        var difference = 0
++        for (i in 0 until TAG_LENGTH) {
++            difference = difference or (expected[i].toInt() xor sealed[ciphertextLength + i].toInt())
++        }
++        if (difference != 0) error("AES-GCM tag verification failed")
++        return counterMode(j0, ciphertext)
++    }
++
++    private fun hashSubkey(): ByteArray = encryptBlocks(ByteArray(BLOCK_SIZE))
++
++    private fun preCounterBlock(h: ByteArray, iv: ByteArray): ByteArray {
++        require(iv.isNotEmpty()) { "AES-GCM requires an IV" }
++        if (iv.size == 12) return iv + byteArrayOf(0, 0, 0, 1)
++        val ghash = Ghash(h)
++        ghash.update(iv)
++        ghash.updateLengths(0L, iv.size.toLong() * 8)
++        return ghash.digest()
++    }
++
++    private fun counterMode(j0: ByteArray, input: ByteArray): ByteArray {
++        if (input.isEmpty()) return ByteArray(0)
++        val blockCount = (input.size + BLOCK_SIZE - 1) / BLOCK_SIZE
++        val counters = ByteArray(blockCount * BLOCK_SIZE)
++        var counter = readInt(j0, 12)
++        for (block in 0 until blockCount) {
++            counter += 1 // inc32: Int arithmetic wraps modulo 2^32, as GCM requires
++            val offset = block * BLOCK_SIZE
++            j0.copyInto(counters, offset, 0, 12)
++            writeInt(counters, offset + 12, counter)
++        }
++        val keystream = encryptBlocks(counters)
++        return ByteArray(input.size) { i -> (input[i].toInt() xor keystream[i].toInt()).toByte() }
++    }
++
++    private fun tag(h: ByteArray, j0: ByteArray, ciphertext: ByteArray): ByteArray {
++        val ghash = Ghash(h)
++        ghash.update(ciphertext)
++        ghash.updateLengths(0L, ciphertext.size.toLong() * 8)
++        val s = ghash.digest()
++        val mask = encryptBlocks(j0)
++        return ByteArray(TAG_LENGTH) { i -> (s[i].toInt() xor mask[i].toInt()).toByte() }
++    }
++
++    /** GHASH over 128-bit blocks, each block held as two big-endian 64-bit halves. */
++    private class Ghash(h: ByteArray) {
++        private val hHigh = readLong(h, 0)
++        private val hLow = readLong(h, 8)
++        private var yHigh = 0L
++        private var yLow = 0L
++
++        /** Absorbs [data], zero-padded to a whole number of blocks. */
++        fun update(data: ByteArray) {
++            var offset = 0
++            while (offset < data.size) {
++                val block = ByteArray(BLOCK_SIZE)
++                data.copyInto(block, 0, offset, minOf(offset + BLOCK_SIZE, data.size))
++                absorb(readLong(block, 0), readLong(block, 8))
++                offset += BLOCK_SIZE
++            }
++        }
++
++        fun updateLengths(firstBits: Long, secondBits: Long) = absorb(firstBits, secondBits)
++
++        fun digest(): ByteArray {
++            val out = ByteArray(BLOCK_SIZE)
++            writeLong(out, 0, yHigh)
++            writeLong(out, 8, yLow)
++            return out
++        }
++
++        // Y = (Y xor X) * H in GF(2^128), using GCM's bit order (SP 800-38D, Algorithm 1).
++        private fun absorb(xHigh: Long, xLow: Long) {
++            val aHigh = yHigh xor xHigh
++            val aLow = yLow xor xLow
++            var zHigh = 0L
++            var zLow = 0L
++            var vHigh = hHigh
++            var vLow = hLow
++            for (i in 0 until 128) {
++                val bit = if (i < 64) (aHigh ushr (63 - i)) and 1L else (aLow ushr (127 - i)) and 1L
++                if (bit != 0L) {
++                    zHigh = zHigh xor vHigh
++                    zLow = zLow xor vLow
++                }
++                val carry = vLow and 1L
++                vLow = (vLow ushr 1) or (vHigh shl 63)
++                vHigh = vHigh ushr 1
++                if (carry != 0L) vHigh = vHigh xor REDUCTION
++            }
++            yHigh = zHigh
++            yLow = zLow
++        }
++    }
++
++    private companion object {
++        const val BLOCK_SIZE = 16
++        const val TAG_LENGTH = 16
++
++        /** 0xE1 followed by 120 zero bits: the GCM reduction polynomial, high half. */
++        const val REDUCTION = -0x1f00000000000000L
++
++        fun readInt(bytes: ByteArray, offset: Int): Int =
++            ((bytes[offset].toInt() and 0xff) shl 24) or
++                ((bytes[offset + 1].toInt() and 0xff) shl 16) or
++                ((bytes[offset + 2].toInt() and 0xff) shl 8) or
++                (bytes[offset + 3].toInt() and 0xff)
++
++        fun writeInt(bytes: ByteArray, offset: Int, value: Int) {
++            bytes[offset] = (value ushr 24).toByte()
++            bytes[offset + 1] = (value ushr 16).toByte()
++            bytes[offset + 2] = (value ushr 8).toByte()
++            bytes[offset + 3] = value.toByte()
++        }
++
++        fun readLong(bytes: ByteArray, offset: Int): Long {
++            var result = 0L
++            for (i in 0 until 8) result = (result shl 8) or (bytes[offset + i].toLong() and 0xffL)
++            return result
++        }
++
++        fun writeLong(bytes: ByteArray, offset: Int, value: Long) {
++            for (i in 0 until 8) bytes[offset + i] = (value ushr (56 - 8 * i)).toByte()
++        }
++    }
++}
+diff --git a/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginCrypto.ios.kt b/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginCrypto.ios.kt
+index 5e5b205..dbf6e81 100644
+--- a/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginCrypto.ios.kt
++++ b/composeApp/src/iosFull/kotlin/com/nuvio/app/features/plugins/PluginCrypto.ios.kt
+@@ -116,78 +116,7 @@ internal fun pluginAesEncrypt(
+ 
+     val isGcm = mode.uppercase().contains("GCM")
+     if (isGcm) {
+-        var encryptedData: ByteArray? = null
+-        memScoped {
+-            val cryptorRefVar = alloc<com.nuvio.app.features.plugins.cryptointerop.CCCryptorRefVar>()
+-            
+-            key.usePinned { pinnedKey ->
+-                iv.usePinned { pinnedIv ->
+-                    data.usePinned { pinnedData ->
+-                        val keyPtr = if (key.isNotEmpty()) pinnedKey.addressOf(0) else null
+-                        val ivPtr = if (iv.isNotEmpty()) pinnedIv.addressOf(0) else null
+-                        val dataPtr = if (data.isNotEmpty()) pinnedData.addressOf(0) else null
+-                        
+-                        val status = CCCryptorCreateWithMode(
+-                            op = kCCEncrypt,
+-                            mode = kCCModeGCM,
+-                            alg = kCCAlgorithmAES,
+-                            padding = ccNoPadding,
+-                            iv = ivPtr,
+-                            key = keyPtr,
+-                            keyLength = key.size.toULong(),
+-                            tweak = null,
+-                            tweakLength = 0UL,
+-                            numRounds = 0,
+-                            options = 0U,
+-                            cryptorRef = cryptorRefVar.ptr
+-                        )
+-                        
+-                        if (status != kCCSuccess) {
+-                            error("CCCryptorCreateWithMode failed with status: $status")
+-                        }
+-                        
+-                        val cryptorRef = cryptorRefVar.value ?: error("Cryptor reference was null")
+-                        
+-                        try {
+-                            val cipherTextBytes = ByteArray(data.size)
+-                            cipherTextBytes.usePinned { pinnedCipher ->
+-                                val cipherPtr = if (data.isNotEmpty()) pinnedCipher.addressOf(0) else null
+-                                val cryptStatus = CCCryptorGCMEncrypt(
+-                                    cryptorRef = cryptorRef,
+-                                    dataIn = dataPtr,
+-                                    dataInLength = data.size.toULong(),
+-                                    dataOut = cipherPtr
+-                                )
+-                                if (cryptStatus != kCCSuccess) {
+-                                    error("CCCryptorGCMEncrypt failed with status: $cryptStatus")
+-                                }
+-                            }
+-                            
+-                            val tagBytes = ByteArray(16)
+-                            val tagLengthVar = alloc<platform.posix.size_tVar>()
+-                            tagLengthVar.value = 16UL
+-                            
+-                            tagBytes.usePinned { pinnedTag ->
+-                                val tagPtr = pinnedTag.addressOf(0)
+-                                val finalStatus = CCCryptorGCMFinal(
+-                                    cryptorRef = cryptorRef,
+-                                    tag = tagPtr,
+-                                    tagLength = tagLengthVar.ptr
+-                                )
+-                                if (finalStatus != kCCSuccess) {
+-                                    error("CCCryptorGCMFinal failed with status: $finalStatus")
+-                                }
+-                            }
+-                            
+-                            encryptedData = cipherTextBytes + tagBytes
+-                        } finally {
+-                            CCCryptorRelease(cryptorRef)
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        return encryptedData ?: ByteArray(0)
++        return AesGcm { blocks -> aesEcbEncryptBlocks(key, blocks) }.seal(iv, data)
+     }
+     
+     val isEcb = mode.uppercase().contains("ECB")
+@@ -256,82 +185,7 @@ internal fun pluginAesDecrypt(
+     val isGcm = mode.uppercase().contains("GCM")
+     if (isGcm) {
+         require(data.size >= 16) { "Data too short for GCM decryption" }
+-        val ciphertextLen = data.size - 16
+-        val ciphertext = data.copyOfRange(0, ciphertextLen)
+-        val tagBytes = data.copyOfRange(ciphertextLen, data.size)
+-        
+-        var decryptedData: ByteArray? = null
+-        
+-        memScoped {
+-            val cryptorRefVar = alloc<com.nuvio.app.features.plugins.cryptointerop.CCCryptorRefVar>()
+-            
+-            key.usePinned { pinnedKey ->
+-                iv.usePinned { pinnedIv ->
+-                    ciphertext.usePinned { pinnedCipher ->
+-                        tagBytes.usePinned { pinnedTag ->
+-                            val keyPtr = if (key.isNotEmpty()) pinnedKey.addressOf(0) else null
+-                            val ivPtr = if (iv.isNotEmpty()) pinnedIv.addressOf(0) else null
+-                            val cipherPtr = if (ciphertext.isNotEmpty()) pinnedCipher.addressOf(0) else null
+-                            val tagPtr = pinnedTag.addressOf(0)
+-                            
+-                            val status = CCCryptorCreateWithMode(
+-                                op = kCCDecrypt,
+-                                mode = kCCModeGCM,
+-                                alg = kCCAlgorithmAES,
+-                                padding = ccNoPadding,
+-                                iv = ivPtr,
+-                                key = keyPtr,
+-                                keyLength = key.size.toULong(),
+-                                tweak = null,
+-                                tweakLength = 0UL,
+-                                numRounds = 0,
+-                                options = 0U,
+-                                cryptorRef = cryptorRefVar.ptr
+-                            )
+-                            
+-                            if (status != kCCSuccess) {
+-                                error("CCCryptorCreateWithMode failed with status: $status")
+-                            }
+-                            
+-                            val cryptorRef = cryptorRefVar.value ?: error("Cryptor reference was null")
+-                            
+-                            try {
+-                                val plainTextBytes = ByteArray(ciphertextLen)
+-                                plainTextBytes.usePinned { pinnedPlain ->
+-                                    val plainPtr = if (ciphertextLen > 0) pinnedPlain.addressOf(0) else null
+-                                    val cryptStatus = CCCryptorGCMDecrypt(
+-                                        cryptorRef = cryptorRef,
+-                                        dataIn = cipherPtr,
+-                                        dataInLength = ciphertextLen.toULong(),
+-                                        dataOut = plainPtr
+-                                    )
+-                                    if (cryptStatus != kCCSuccess) {
+-                                        error("CCCryptorGCMDecrypt failed with status: $cryptStatus")
+-                                    }
+-                                }
+-                                
+-                                val tagLengthVar = alloc<platform.posix.size_tVar>()
+-                                tagLengthVar.value = 16UL
+-                                
+-                                val finalStatus = CCCryptorGCMFinal(
+-                                    cryptorRef = cryptorRef,
+-                                    tag = tagPtr,
+-                                    tagLength = tagLengthVar.ptr
+-                                )
+-                                if (finalStatus != kCCSuccess) {
+-                                    error("CCCryptorGCMFinal failed with status: $finalStatus (tag verification failed)")
+-                                }
+-                                
+-                                decryptedData = plainTextBytes
+-                            } finally {
+-                                CCCryptorRelease(cryptorRef)
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        return decryptedData ?: ByteArray(0)
++        return AesGcm { blocks -> aesEcbEncryptBlocks(key, blocks) }.open(iv, data)
+     }
+     
+     val isEcb = mode.uppercase().contains("ECB")
+@@ -385,6 +239,40 @@ internal fun pluginAesDecrypt(
+     return finalData ?: ByteArray(0)
+ }
+ 
++/** AES-ECB encryption of whole 16-byte blocks via CCCrypt (public CommonCrypto API); used by [AesGcm]. */
++@OptIn(ExperimentalForeignApi::class)
++private fun aesEcbEncryptBlocks(key: ByteArray, blocks: ByteArray): ByteArray {
++    require(blocks.size % 16 == 0) { "AES block input must be a multiple of 16 bytes" }
++    if (blocks.isEmpty()) return ByteArray(0)
++    val output = ByteArray(blocks.size)
++    memScoped {
++        val moved = alloc<platform.posix.size_tVar>()
++        key.usePinned { pinnedKey ->
++            blocks.usePinned { pinnedBlocks ->
++                output.usePinned { pinnedOutput ->
++                    val status = CCCrypt(
++                        op = kCCEncrypt,
++                        alg = kCCAlgorithmAES,
++                        options = kCCOptionECBMode,
++                        key = pinnedKey.addressOf(0),
++                        keyLength = key.size.toULong(),
++                        iv = null,
++                        dataIn = pinnedBlocks.addressOf(0),
++                        dataInLength = blocks.size.toULong(),
++                        dataOut = pinnedOutput.addressOf(0),
++                        dataOutAvailable = output.size.toULong(),
++                        dataOutMoved = moved.ptr
++                    )
++                    if (status != kCCSuccess || moved.value.toInt() != blocks.size) {
++                        error("AES block encryption failed with status: $status")
++                    }
++                }
++            }
++        }
++    }
++    return output
++}
++
+ internal fun pluginSign(algorithm: String, privateKey: ByteArray, data: ByteArray): ByteArray {
+     throw UnsupportedOperationException("Asymmetric signing is currently implemented natively only on Android")
+ }
+diff --git a/composeApp/src/nativeInterop/cinterop/commoncrypto_shim.h b/composeApp/src/nativeInterop/cinterop/commoncrypto_shim.h
+index c9b7621..375177e 100644
+--- a/composeApp/src/nativeInterop/cinterop/commoncrypto_shim.h
++++ b/composeApp/src/nativeInterop/cinterop/commoncrypto_shim.h
+@@ -158,32 +158,6 @@ CCCryptorStatus CCCryptorCreateWithMode(
+     CCCryptorRef *cryptorRef
+ );
+ 
+-CCCryptorStatus CCCryptorGCMAddAAD(
+-    CCCryptorRef cryptorRef,
+-    const void *aData,
+-    size_t aDataLen
+-);
+-
+-CCCryptorStatus CCCryptorGCMEncrypt(
+-    CCCryptorRef cryptorRef,
+-    const void *dataIn,
+-    size_t dataInLength,
+-    void *dataOut
+-);
+-
+-CCCryptorStatus CCCryptorGCMDecrypt(
+-    CCCryptorRef cryptorRef,
+-    const void *dataIn,
+-    size_t dataInLength,
+-    void *dataOut
+-);
+-
+-CCCryptorStatus CCCryptorGCMFinal(
+-    CCCryptorRef cryptorRef,
+-    void *tag,
+-    size_t *tagLength
+-);
+-
+ CCCryptorStatus CCCryptorRelease(
+     CCCryptorRef cryptorRef
+ );
