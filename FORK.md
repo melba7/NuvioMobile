@@ -1,6 +1,6 @@
 # Mo's Nuvio fork
 
-This fork builds the official Nuvio iOS release named in `fork/UPSTREAM_TAG`, with two patches,
+This fork builds the official Nuvio iOS release named in `fork/UPSTREAM_TAG`, with three patches,
 and uploads it to TestFlight:
 
 - `fork/nuvio-public-gcm.patch`: replaces Nuvio's use of Apple's private AES-GCM functions, which
@@ -8,13 +8,17 @@ and uploads it to TestFlight:
 - `fork/nuvio-downloads.patch`: Netflix-style downloads (download button on every episode and
   movie, Download season, Smart Downloads, Wi-Fi only, background downloads, storage summary
   and Delete all).
+- `fork/nuvio-downloads-2.patch`: change the source or quality of a download, a Download quality
+  setting, many downloads at once, a Live Activity that starts with any download and keeps
+  moving, downloads that continue with the app closed (background refresh), the download-mode
+  stream list sorted by size, Pause all / Resume all.
 
 The rest of this branch is upstream's code and is not used by the build.
 
 ## How it runs
 
 - **TestFlight** (`.github/workflows/testflight.yml`): on every push that changes `fork/`, and
-  from the Actions tab. A GitHub Mac clones the tagged release, applies both patches, builds,
+  from the Actions tab. A GitHub Mac clones the tagged release, applies the patches, builds,
   signs with the App Store Connect API key and uploads. Builds land in TestFlight about 1-2
   hours after the push (build plus Apple's processing).
 - **Upstream check** (`.github/workflows/upstream-check.yml`): every night. When Nuvio publishes

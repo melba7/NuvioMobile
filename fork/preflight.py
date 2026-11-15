@@ -12,14 +12,15 @@ import nuvio_testflight as tf  # noqa: E402
 
 
 def main():
-    kid = os.environ.get("ASC_KEY_ID", "")
-    iss = os.environ.get("ASC_ISSUER_ID", "")
+    # Quotes and spaces around a pasted value are harmless; the workflow strips them too.
+    kid = os.environ.get("ASC_KEY_ID", "").strip().strip("\"'").strip()
+    iss = os.environ.get("ASC_ISSUER_ID", "").strip().strip("\"'").strip()
     p8 = os.environ.get("ASC_KEY_P8", "")
     problems = []
     if not re.fullmatch(r"[A-Z0-9]{10}", kid.strip()):
+        looks_like_issuer = bool(re.fullmatch(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", kid))
         problems.append("ASC_KEY_ID should be exactly 10 letters/digits (like 2X9R4HXF34). Yours has %d characters%s."
-                        % (len(kid.strip()), " and contains spaces, quotes or lower-case letters"
-                           if re.search(r"[^A-Z0-9]", kid.strip()) else ""))
+                        % (len(kid), ": it looks like the Issuer ID was pasted here" if looks_like_issuer else ""))
     if not re.fullmatch(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", iss.strip()):
         problems.append("ASC_ISSUER_ID should look like 69a6de7f-1234-47e3-e053-5b8c7c11a4d1 (36 characters, no "
                         "quotes). Yours has %d characters%s." % (len(iss.strip()), " and starts or ends with a quote"

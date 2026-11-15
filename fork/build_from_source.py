@@ -39,7 +39,8 @@ _tag_file = os.path.join(HERE, "UPSTREAM_TAG")
 if os.path.exists(_tag_file):  # the GitHub fork keeps the tested tag here; its nightly check moves it
     with open(_tag_file) as _f:
         SOURCE_TAG = _f.read().strip() or SOURCE_TAG
-PATCHES = (PATCH, DOWNLOADS_PATCH)
+DOWNLOADS_PATCH_2 = os.path.join(HERE, "nuvio-downloads-2.patch")
+PATCHES = (PATCH, DOWNLOADS_PATCH, DOWNLOADS_PATCH_2)
 REPO = "https://github.com/NuvioMedia/NuvioMobile.git"
 BUILD_LOG = os.path.join(tf.STATE, "build.log")
 PRIVATE_SYMBOLS = (b"CCCryptorGCMEncrypt", b"CCCryptorGCMDecrypt", b"CCCryptorGCMFinal", b"CCCryptorGCMAddAAD")
@@ -160,7 +161,7 @@ def official_server_settings(official_ipa):
 def prepare_source(tag, official_ipa):
     tf.step("Nuvio source (%s)" % tag)
     src = os.path.join(HERE, "source", tag)
-    marker = os.path.join(src, ".nuvio-patched-gcm-downloads")
+    marker = os.path.join(src, ".nuvio-patched-gcm-downloads-2")
     if os.path.exists(marker):
         say("Already downloaded and patched: " + src)
     else:
@@ -281,6 +282,13 @@ def main():
     ipa = build(src, java_home, android_home)
     verify_no_private_gcm(ipa)
     say("Built: " + ipa)
+
+    if os.environ.get("NUVIO_BUILD_ONLY") == "1":
+        say("")
+        say("The app compiled and packaged correctly, but it was NOT uploaded: the App Store Connect")
+        say("secrets were refused (see the 'Check the App Store Connect key' step). Fix the secret and")
+        say("run the workflow again.")
+        sys.exit(1)
 
     tf.step("Handing over to the TestFlight script")
     sys.exit(subprocess.call([sys.executable, os.path.join(HERE, "nuvio_testflight.py"), "--ipa", ipa]))
