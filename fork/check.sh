@@ -27,7 +27,8 @@ fi
 cd "$TREE"
 [ -f local.properties ] || touch local.properties
 if ! ./gradlew --console=plain --no-daemon :composeApp:testAndroidHostTest "${TESTS[@]}" >"$LOG" 2>&1; then
-  grep -E "FAILED|^e: |Exception|What went wrong|Could not|^> " "$LOG" | head -n 40 || true
+  grep -v "^> Task .*\(UP-TO-DATE\|NO-SOURCE\)$" "$LOG" | grep -E -A12 "FAILED|^e: |What went wrong" | head -n 60 || true
+  tail -n 15 "$LOG"
   echo "CHECK FAILED: patches apply, tests did not pass"
   exit 1
 fi
