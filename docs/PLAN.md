@@ -1,4 +1,5 @@
-Done: 2 | Last cleanup: none | Mac builds used: 0 of about 5
+Done: 2 | Last cleanup: none | Mac builds used: 0 of about 5 (PR #1 not merged yet)
+Merging PR #1 to cmp-rewrite starts one Mac build (it touches fork/). Hold the merge until milestone 3 is in.
 
 Waiting on Mo: 1 movie clip with its name and rough time.
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
@@ -25,11 +26,12 @@ for milestone 4 or after a check fails twice.
     .github/workflows/fork-check.yml, CLAUDE.md, work tree AppUrlBridge.kt + its test.
 
 - [x] **2. The matcher** (no Mac build)
-  - Build in `features/clipfinder/`: `ClipText.normalize` (lowercase, strip punctuation and
-    filler), `ClipMatcher.match(lines, episodes)` using word triples: index each episode's
-    cues, count distinct triple hits inside a sliding window (clip length x 2), rank by hits
-    and by margin over the runner-up, return `ClipCandidate`s. Order and speed must not
-    matter. Reject when fewer than 4 distinct hits or margin is thin.
+  - Built in `features/clipfinder/`: `ClipText.normalize` (lowercase, Unicode letters and digits;
+    drops [music]/(laughs), speaker labels, leading dashes/notes; joins "2 00 8"). `ClipMatcher.match`
+    counts distinct word triples shared with each episode. A hit needs a different hit from a
+    different cue within 45 s; hits form time clusters (gap 60 s); clusters with at least 25% of
+    the hits form the span. Confident = 4+ hits in the main cluster, 15%+ of the clip's triples,
+    and 2x the runner-up. Order and speed do not matter.
   - Tests (made-up subtitles, never real show text): exact lines; 30% wrong words; half the
     lines missing (music); lines out of order (edited clip); two similar episodes; wrong
     show rejected; movie (one long file); empty transcript.

@@ -58,8 +58,8 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
 
 ## Data model (in memory unless noted)
 - `ClipRequest(link | fileUrl)`; `ClipInfo(caption, hashtags, author, thumbnailUrl)`
-- `ClipLine(text, startMs, endMs, source = speech | ocr)`
-- `ClipCandidate(metaId, type, season, episode, startMs, endMs, confidence)`
+- `ClipLine(text, startMs, endMs)`; `EpisodeCues(videoId, season, episode, cues)`
+- `ClipCandidate(videoId, season, episode, startMs, endMs, confidence, hits, confident)`
 - Disk: subtitle cache only (`clipfinder-subs/<metaId>/<videoId>.txt`). No clip is ever stored.
 
 ## Decisions log

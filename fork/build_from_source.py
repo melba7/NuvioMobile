@@ -19,6 +19,7 @@ What it does:
 """
 
 import base64
+import hashlib
 import json
 import os
 import plistlib
@@ -159,10 +160,19 @@ def official_server_settings(official_ipa):
     return None
 
 
+def patches_fingerprint():
+    """Short hash of the contents of all PATCHES, so a changed patch means a fresh download + patch."""
+    h = hashlib.sha256()
+    for patch in PATCHES:
+        with open(patch, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()[:12]
+
+
 def prepare_source(tag, official_ipa):
     tf.step("Nuvio source (%s)" % tag)
     src = os.path.join(HERE, "source", tag)
-    marker = os.path.join(src, ".nuvio-patched-gcm-downloads-2-share-resume")
+    marker = os.path.join(src, ".nuvio-patched-" + patches_fingerprint())
     if os.path.exists(marker):
         say("Already downloaded and patched: " + src)
     else:

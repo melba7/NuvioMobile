@@ -6,18 +6,36 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TREE="${NUVIO_WORK:-$HERE/../../nuvio-work}"
 LOG="$(mktemp)"
 CLEAN=""
-cleanup() { [ -n "$CLEAN" ] && git -C "$TREE" worktree remove --force "$CLEAN" >/dev/null 2>&1 || true; rm -f "$LOG"; }
+CLEAN_PARENT=""
+cleanup() {
+  [ -n "$CLEAN" ] && git -C "$TREE" worktree remove --force "$CLEAN" >/dev/null 2>&1 || true
+  [ -n "$CLEAN_PARENT" ] && rm -rf "$CLEAN_PARENT"
+  rm -f "$LOG"
+}
 trap cleanup EXIT
 fail() { echo "FAIL: $1"; [ -s "$LOG" ] && tail -n 40 "$LOG"; exit 1; }
 
 "$HERE/dev-tree.sh" >"$LOG" 2>&1 || fail "could not make the work tree"
 
 # (a) clean checkout = the commit just before the baseline commit (upstream tag, no patches)
-CLEAN="$(mktemp -d)/clean"
+CLEAN_PARENT="$(mktemp -d)"
+CLEAN="$CLEAN_PARENT/clean"
 git -C "$TREE" worktree add -q --detach "$CLEAN" fork-baseline^ >"$LOG" 2>&1 || fail "could not check out upstream"
-for p in nuvio-public-gcm nuvio-downloads nuvio-downloads-2 nuvio-share-resume; do
-  git -C "$CLEAN" apply --whitespace=nowarn "$HERE/$p.patch" >"$LOG" 2>&1 || fail "$p.patch does not apply"
+# the patch list lives in PATCHES in build_from_source.py
+mapfile -t PATCH_NAMES < <(python3 -B -c 'import os, sys; sys.path.insert(0, sys.argv[1]); import build_from_source as b; print("\n".join(os.path.basename(p) for p in b.PATCHES))' "$HERE")
+[ "${#PATCH_NAMES[@]}" -ge 1 ] || fail "could not read PATCHES from build_from_source.py"
+for p in "${PATCH_NAMES[@]}"; do
+  git -C "$CLEAN" apply --whitespace=nowarn "$HERE/$p" >"$LOG" 2>&1 || fail "$p does not apply"
 done
+
+# The tests run on the work tree. Locally it may hold changes not yet saved to the patch:
+# compare both trees (same files, same content) and warn if they differ.
+if [ -z "${CI:-}" ]; then
+  tree_id() { GIT_INDEX_FILE="$CLEAN_PARENT/idx-$2" git -C "$1" add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$CLEAN_PARENT/idx-$2" git -C "$1" write-tree; }
+  if [ "$(tree_id "$TREE" work)" != "$(tree_id "$CLEAN" saved)" ]; then
+    echo "WARNING: the work tree has changes that are not saved yet; the tests below use them, but the saved patch lacks them. Run fork/dev-tree.sh save." >&2
+  fi
+fi
 
 # (b) tests: Android host test task (the only JVM test target); -x filters keep it small
 TESTS=(--tests 'com.nuvio.app.core.deeplink.*')
@@ -40,4 +58,4 @@ PY
   echo "CHECK FAILED: patches apply, tests did not pass"
   exit 1
 fi
-echo "CHECK OK: 4 patches apply in order; tests passed (:composeApp:testAndroidHostTest)"
+echo "CHECK OK: ${#PATCH_NAMES[@]} patches apply in order; tests passed (:composeApp:testAndroidHostTest)"
