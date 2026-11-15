@@ -12,7 +12,7 @@ index 41bcb0f..0d8c6ff 100644
                  }
              }
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
-index 5f8e33f..1fe2d50 100644
+index 5f8e33f..c9e5ba7 100644
 --- a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
 @@ -26,6 +26,10 @@ internal sealed interface AppDeepLink {
@@ -43,10 +43,10 @@ index 5f8e33f..1fe2d50 100644
 +
 +private fun clipDeepLink(link: String?): AppDeepLink.Clip? {
 +    if (link == null || link.length > CLIP_URL_MAX_LENGTH) return null
-+    val parsed = runCatching { Url(link) }.getOrNull() ?: return null
-+    val scheme = parsed.protocol.name.lowercase()
-+    if (scheme != "http" && scheme != "https") return null
-+    return if (parsed.host.isBlank()) null else AppDeepLink.Clip(link)
++    val hasWebScheme = link.startsWith("https://", ignoreCase = true) || link.startsWith("http://", ignoreCase = true)
++    if (!hasWebScheme) return null
++    val authority = link.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#')
++    return if (authority.isBlank()) null else AppDeepLink.Clip(link)
 +}
 +
  private fun parseMetaFromParameters(parsedUrl: Url): AppDeepLink.Meta? {
