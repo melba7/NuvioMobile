@@ -78,6 +78,9 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
 - 2026-11-15 | Start/end: a cluster is substantial with 4+ distinct hits from 3+ cues; span = earliest
   to latest substantial cluster, hits = total over them (none substantial: biggest cluster) |
   a share-of-hits cut dropped real compilation segments; a lone stray phrase stays ignored.
+- 2026-11-15 | Share extension opens the app through the responder chain, notification as fallback |
+  extensions cannot name UIApplication.open; the notification tap reuses the app's existing "deeplink" handler.
+- 2026-11-15 | Shared video = file:// link parsed in Kotlin, opened in place | no copy of the video is stored.
 
 ## Known problems
 - Mac test 2026-11-15 (3 real clips): one Speech request on a long file returns only the last

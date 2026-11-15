@@ -1,5 +1,5 @@
-Done: 2 | Last cleanup: none | Mac builds used: 0 of about 5 (PR #1 not merged yet)
-Merging PR #1 to cmp-rewrite starts one Mac build (it touches fork/). Hold the merge until milestone 3 is in.
+Done: 2 | Last cleanup: none | Mac builds used: 0 of about 5 (PR #1 merged; milestone 3 built on branch clip-finder-share, awaiting the Mac build and phone check)
+Milestone 3 is a draft pull request; merging it to cmp-rewrite starts the Mac build, so merge only after the branch test build passes on the phone.
 
 Waiting on Mo: 1 movie clip with its name and rough time.
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
@@ -461,6 +461,10 @@ Steps
     with that): after Fork check is green, `gh workflow run TestFlight --ref clip-finder-share`. The workflow
     checks out the ref it is started on (default branch is `cmp-rewrite`, so branch runs are allowed). Green and
     phone checks pass: merge. Skip a second build only if nothing under `fork/` changed since.
+
+Deviations when built (2026-11-15)
+- Step 3: `AppNavigationSupport.kt` is at `com/nuvio/app/`, not `navigation/`; the `subclass(ClipFinderRoute...)` line went there.
+- Step 11: `fork/check.sh` stops at Gradle here (Google Maven blocked); it still showed the patches apply. Kotlin proof = "Fork check" on the PR.
 
 What each check proves
 - Fork check (Linux): patch applies, Kotlin compiles, parser + label tests. Nothing about Swift, plists, Xcode.

@@ -57,6 +57,7 @@ TRANSPORTER_CLI = "/Applications/Transporter.app/Contents/itms/bin/iTMSTransport
 
 DEFAULT_BUNDLE_ID = "com.elbarkatawy.nuvio"
 WIDGET_SUFFIX = ".DownloadsWidgetExtension"
+SHARE_SUFFIX = ".ShareExtension"
 GROUP_NAME = "Me"
 OPENSSL = "/usr/bin/openssl" if os.path.exists("/usr/bin/openssl") else "openssl"
 
@@ -891,9 +892,11 @@ def main():
 
     bundle_id = cfg["bundle_id"]
     widget_id = bundle_id + WIDGET_SUFFIX
+    share_id = bundle_id + SHARE_SUFFIX
     step("Bundle IDs")
     app_bid = ensure_bundle_id(asc, bundle_id, "Nuvio Personal")
     widget_bid = ensure_bundle_id(asc, widget_id, "Nuvio Downloads Widget")
+    share_bid = ensure_bundle_id(asc, share_id, "Nuvio Share Extension")
     app = ensure_app(asc, bundle_id)
     app_id = app["id"]
 
@@ -906,10 +909,14 @@ def main():
                             os.path.join(prof_dir, "app.mobileprovision"))
     widget_prof = make_profile(asc, "Nuvio TestFlight Widget", widget_bid, cert["cert_id"],
                                os.path.join(prof_dir, "widget.mobileprovision"))
+    share_prof = make_profile(asc, "Nuvio TestFlight Share", share_bid, cert["cert_id"],
+                              os.path.join(prof_dir, "share.mobileprovision"))
     app_ents = os.path.join(prof_dir, "app.entitlements")
     widget_ents = os.path.join(prof_dir, "widget.entitlements")
+    share_ents = os.path.join(prof_dir, "share.entitlements")
     team = entitlements_from_profile(app_prof, bundle_id, app_ents)
     entitlements_from_profile(widget_prof, widget_id, widget_ents)
+    entitlements_from_profile(share_prof, share_id, share_ents)
     say("Team ID: " + team)
 
     ipa, release = get_ipa(args)
@@ -929,8 +936,10 @@ def main():
             for ext in glob.glob(os.path.join(app_path, "PlugIns", "*.appex")):
                 if os.path.basename(ext) == "DownloadsWidgetExtension.appex":
                     ext_profiles[ext] = (widget_prof, widget_ents)
+                elif os.path.basename(ext) == "ShareExtension.appex":
+                    ext_profiles[ext] = (share_prof, share_ents)
                 else:
-                    die("unexpected extension %s; this script only knows the downloads widget." % ext)
+                    die("unexpected extension %s; this script only knows the downloads widget and the share extension." % ext)
             with SigningKeychain(cert) as kc:
                 sign_bundle(app_path, kc, app_prof, app_ents, ext_profiles)
             out_dir = os.path.join(HERE, "output")

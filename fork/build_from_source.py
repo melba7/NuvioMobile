@@ -271,6 +271,13 @@ def verify_no_private_gcm(ipa):
     say("No private AES-GCM functions in the app. Good to upload.")
 
 
+def verify_share_extension(ipa):
+    with zipfile.ZipFile(ipa) as z:
+        names = z.namelist()
+    if not any(re.fullmatch(r"Payload/[^/]+\.app/PlugIns/ShareExtension\.appex/Info\.plist", n) for n in names):
+        die("the build has no ShareExtension.appex; check the ShareExtension target in project.pbxproj.")
+
+
 def main():
     os.makedirs(tf.STATE, exist_ok=True)
     if sys.platform != "darwin":
@@ -293,6 +300,7 @@ def main():
     src = prepare_source(tag, official_ipa)
     ipa = build(src, java_home, android_home)
     verify_no_private_gcm(ipa)
+    verify_share_extension(ipa)
     say("Built: " + ipa)
 
     if os.environ.get("NUVIO_BUILD_ONLY") == "1":
