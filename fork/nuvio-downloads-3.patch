@@ -1,0 +1,125 @@
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/DownloadsOrchestrator.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/DownloadsOrchestrator.kt
+index 7c72a0b..82c789f 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/DownloadsOrchestrator.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/DownloadsOrchestrator.kt
+@@ -31,6 +31,7 @@ import com.nuvio.app.features.streams.StreamItem
+ import com.nuvio.app.features.streams.StreamsEmptyStateReason
+ import com.nuvio.app.features.streams.StreamsUiState
+ import com.nuvio.app.features.streams.downloadSizeBytes
++import com.nuvio.app.features.streams.isUncachedPlaceholder
+ import com.nuvio.app.features.watchprogress.CurrentDateProvider
+ import com.nuvio.app.features.watchprogress.WatchProgressRepository
+ import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
+@@ -564,6 +565,8 @@ object DownloadsOrchestrator {
+         }
+ 
+         val candidates = streams.mapIndexed { index, stream ->
++            // An uncached stream's link is a placeholder video: never pick it automatically.
++            val uncached = stream.isUncachedPlaceholder()
+             StreamCandidate(
+                 index = index,
+                 addonId = stream.addonId,
+@@ -576,8 +579,8 @@ object DownloadsOrchestrator {
+                 ).joinToString(" ").takeIf { it.isNotBlank() },
+                 filename = stream.behaviorHints.filename,
+                 bingeGroup = stream.behaviorHints.bingeGroup,
+-                directUrl = stream.playableDirectUrl,
+-                resolvable = DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream),
++                directUrl = if (uncached) null else stream.playableDirectUrl,
++                resolvable = !uncached && DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream),
+             )
+         }
+         val selection = DownloadStreamSelector.select(
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRules.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRules.kt
+new file mode 100644
+index 0000000..d2f4abf
+--- /dev/null
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRules.kt
+@@ -0,0 +1,19 @@
++package com.nuvio.app.features.downloads.core
++
++/**
++ * Debrid add-ons (Debridio, Torrentio, Comet, ...) list files the debrid service has not cached yet too. Their link
++ * does not point at the movie: it points at a short "Downloading to Provider, please wait" placeholder video, so
++ * saving it would store that placeholder. This file (like everything in `core/`) may only import `kotlin.*`.
++ */
++object UncachedStreamRules {
++    // "[RD download]", "[AD download]", "[PM+ download]", "[TB ⬇]" ...
++    private val providerDownloadTag = Regex("\\[\\s*[a-z]{2,4}\\+?\\s*(?:download|⬇️?)\\s*\\]", RegexOption.IGNORE_CASE)
++    private val words = Regex("\\b(?:un-?cached|not[ -]cached|non-cached|downloading to provider)\\b", RegexOption.IGNORE_CASE)
++    private const val HOURGLASS = "⏳"
++
++    /** True when any of the stream's texts says the file is not cached at the debrid provider. */
++    fun looksUncached(texts: List<String?>): Boolean = texts.any { text ->
++        !text.isNullOrEmpty() &&
++            (providerDownloadTag.containsMatchIn(text) || words.containsMatchIn(text) || text.contains(HOURGLASS))
++    }
++}
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamDownloadSizing.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamDownloadSizing.kt
+index 94836cc..227d409 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamDownloadSizing.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamDownloadSizing.kt
+@@ -20,8 +20,8 @@ internal fun StreamItem.downloadSizeBytes(): Long? = StreamSizeParser.resolve(
+ 
+ /** Same rule as `DownloadStreamSelector`'s "eligible". */
+ internal fun StreamItem.isDownloadCandidate(): Boolean =
+-    DownloadUrlRules.isSupported(playableDirectUrl) ||
+-        (playableDirectUrl == null && DirectDebridPlaybackResolver.shouldResolveToPlayableStream(this))
++    !isUncachedPlaceholder() && (DownloadUrlRules.isSupported(playableDirectUrl) ||
++        (playableDirectUrl == null && DirectDebridPlaybackResolver.shouldResolveToPlayableStream(this)))
+ 
+ internal fun StreamItem.toPickedSource(): PickedSource =
+     PickedSource(addonId = addonId, label = streamLabel, subtitle = streamSubtitle, directUrl = playableDirectUrl)
+@@ -30,7 +30,8 @@ internal data class DownloadModeRow(val stream: StreamItem, val sizeBytes: Long?
+ 
+ /** Flat, size-ordered rows for the stream list in download mode: smallest first, unknown sizes after, not downloadable last. */
+ internal fun buildDownloadModeRows(groups: List<AddonStreamGroup>): List<DownloadModeRow> {
+-    val flat = groups.flatMap { it.streams }
++    // Uncached debrid streams only play a "Downloading to Provider" placeholder, so they are left out of the list.
++    val flat = groups.flatMap { it.streams }.filterNot { it.isUncachedPlaceholder() }
+     val sized = flat.mapIndexed { index, stream ->
+         SizedStream(index, stream.downloadSizeBytes(), stream.isDownloadCandidate())
+     }
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamUncached.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamUncached.kt
+new file mode 100644
+index 0000000..2f7cb93
+--- /dev/null
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/streams/StreamUncached.kt
+@@ -0,0 +1,11 @@
++package com.nuvio.app.features.streams
++
++import com.nuvio.app.features.downloads.core.UncachedStreamRules
++
++/**
++ * True for a debrid stream that is not cached yet: its link only plays a "Downloading to Provider" placeholder, so it
++ * must not be offered for download. Uses the debrid cache check when there is one, else the add-on's own labels.
++ */
++internal fun StreamItem.isUncachedPlaceholder(): Boolean =
++    debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED ||
++        UncachedStreamRules.looksUncached(listOf(name, title, description))
+diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRulesTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRulesTest.kt
+new file mode 100644
+index 0000000..24d0e3f
+--- /dev/null
++++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/UncachedStreamRulesTest.kt
+@@ -0,0 +1,20 @@
++package com.nuvio.app.features.downloads.core
++
++import kotlin.test.Test
++import kotlin.test.assertFalse
++import kotlin.test.assertTrue
++
++class UncachedStreamRulesTest {
++    @Test
++    fun flagsUncachedLabels() {
++        assertTrue(UncachedStreamRules.looksUncached(listOf("Torrentio\n[RD download]", null)))
++        assertTrue(UncachedStreamRules.looksUncached(listOf(null, "⏳ 1080p")))
++        assertTrue(UncachedStreamRules.looksUncached(listOf("Debridio", "Not cached")))
++    }
++
++    @Test
++    fun keepsCachedStreams() {
++        assertFalse(UncachedStreamRules.looksUncached(listOf("Torrentio\n[RD+] 1080p", "The.Movie.2024.1080p.mkv")))
++        assertFalse(UncachedStreamRules.looksUncached(listOf(null, "")))
++    }
++}

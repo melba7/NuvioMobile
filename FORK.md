@@ -1,6 +1,6 @@
 # Mo's Nuvio fork
 
-This fork builds the official Nuvio iOS release named in `fork/UPSTREAM_TAG`, with three patches,
+This fork builds the official Nuvio iOS release named in `fork/UPSTREAM_TAG`, with four patches,
 and uploads it to TestFlight:
 
 - `fork/nuvio-public-gcm.patch`: replaces Nuvio's use of Apple's private AES-GCM functions, which
@@ -12,6 +12,8 @@ and uploads it to TestFlight:
   setting, many downloads at once, a Live Activity that starts with any download and keeps
   moving, downloads that continue with the app closed (background refresh), the download-mode
   stream list sorted by size, Pause all / Resume all.
+- `fork/nuvio-downloads-3.patch`: uncached debrid streams (links that only play a "Downloading to
+  Provider" placeholder video) are left out of the download source list and never auto-picked.
 
 The rest of this branch is upstream's code and is not used by the build.
 

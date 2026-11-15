@@ -40,7 +40,8 @@ if os.path.exists(_tag_file):  # the GitHub fork keeps the tested tag here; its 
     with open(_tag_file) as _f:
         SOURCE_TAG = _f.read().strip() or SOURCE_TAG
 DOWNLOADS_PATCH_2 = os.path.join(HERE, "nuvio-downloads-2.patch")
-PATCHES = (PATCH, DOWNLOADS_PATCH, DOWNLOADS_PATCH_2)
+DOWNLOADS_PATCH_3 = os.path.join(HERE, "nuvio-downloads-3.patch")
+PATCHES = (PATCH, DOWNLOADS_PATCH, DOWNLOADS_PATCH_2, DOWNLOADS_PATCH_3)
 REPO = "https://github.com/NuvioMedia/NuvioMobile.git"
 BUILD_LOG = os.path.join(tf.STATE, "build.log")
 PRIVATE_SYMBOLS = (b"CCCryptorGCMEncrypt", b"CCCryptorGCMDecrypt", b"CCCryptorGCMFinal", b"CCCryptorGCMAddAAD")
@@ -161,7 +162,7 @@ def official_server_settings(official_ipa):
 def prepare_source(tag, official_ipa):
     tf.step("Nuvio source (%s)" % tag)
     src = os.path.join(HERE, "source", tag)
-    marker = os.path.join(src, ".nuvio-patched-gcm-downloads-2")
+    marker = os.path.join(src, ".nuvio-patched-gcm-downloads-3")
     if os.path.exists(marker):
         say("Already downloaded and patched: " + src)
     else:
