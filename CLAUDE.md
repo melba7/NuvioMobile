@@ -4,7 +4,9 @@ Current work: Clip finder (share a TikTok/Instagram clip, resume the episode at 
 
 ## Commands
 - Work tree: `fork/dev-tree.sh` (makes `../nuvio-work`); save changes: `fork/dev-tree.sh save`.
-- Check: `fork/check.sh` (patches apply + clipfinder tests). Both scripts arrive in milestone 1.
+- Check: `fork/check.sh` (patches apply + deep link and clipfinder tests). Runs in the work tree:
+  `./gradlew :composeApp:testAndroidHostTest --tests '<package>.*'`. Needs the Android SDK and
+  Google Maven, so it only runs on GitHub ("Fork check" on pull requests), not in the cloud workspace.
 - Mac build + TestFlight: happens by itself when `fork/` changes on `cmp-rewrite`. About 70 min.
 
 ## Always / never

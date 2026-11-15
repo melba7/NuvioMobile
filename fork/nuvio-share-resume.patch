@@ -1,0 +1,108 @@
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
+index 41bcb0f..0d8c6ff 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
+@@ -774,6 +774,8 @@ internal fun MainAppContent(
+                         AppDeepLinkRepository.markConsumed(deepLink)
+                     }
+ 
++                    is AppDeepLink.Clip -> AppDeepLinkRepository.markConsumed(deepLink)
++
+                     null -> Unit
+                 }
+             }
+diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
+index 5f8e33f..1fe2d50 100644
+--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
++++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/core/deeplink/AppUrlBridge.kt
+@@ -26,6 +26,10 @@ internal sealed interface AppDeepLink {
+     data class Party(
+         val code: String,
+     ) : AppDeepLink
++
++    data class Clip(
++        val url: String,
++    ) : AppDeepLink
+ }
+ 
+ internal object AppDeepLinkRepository {
+@@ -104,6 +108,8 @@ internal fun parseAppDeepLink(url: String): AppDeepLink? {
+ 
+         "party" -> partyDeepLink(pathSegments.firstOrNull() ?: firstParameter(parsedUrl, "code"))
+ 
++        "clip" -> clipDeepLink(firstParameter(parsedUrl, "url"))
++
+         "auth" -> null
+ 
+         else -> {
+@@ -119,6 +125,16 @@ internal fun parseAppDeepLink(url: String): AppDeepLink? {
+ private fun partyDeepLink(code: String?): AppDeepLink.Party? =
+     code?.let(::normalizePartyCode)?.takeIf { it.length == PARTY_CODE_LENGTH }?.let(AppDeepLink::Party)
+ 
++private const val CLIP_URL_MAX_LENGTH = 2048
++
++private fun clipDeepLink(link: String?): AppDeepLink.Clip? {
++    if (link == null || link.length > CLIP_URL_MAX_LENGTH) return null
++    val parsed = runCatching { Url(link) }.getOrNull() ?: return null
++    val scheme = parsed.protocol.name.lowercase()
++    if (scheme != "http" && scheme != "https") return null
++    return if (parsed.host.isBlank()) null else AppDeepLink.Clip(link)
++}
++
+ private fun parseMetaFromParameters(parsedUrl: Url): AppDeepLink.Meta? {
+     val type = firstParameter(parsedUrl, "type", "mediaType", "media_type")
+         ?.let(::normalizeDeepLinkMediaType)
+diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
+index a1e48f9..73c7e16 100644
+--- a/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
++++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/core/deeplink/AppUrlBridgeTest.kt
+@@ -1,5 +1,6 @@
+ package com.nuvio.app.core.deeplink
+ 
++import io.ktor.http.encodeURLParameter
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertNull
+@@ -74,4 +75,42 @@ class AppUrlBridgeTest {
+     fun `does not treat non-host stremio link as addon install`() {
+         assertNull(parseAppDeepLink("stremio://detail/series/tt0944947"))
+     }
++
++    @Test
++    fun `parses clip links from TikTok and Instagram`() {
++        assertEquals(
++            AppDeepLink.Clip("https://www.tiktok.com/@someone/video/7300000000000000000"),
++            parseAppDeepLink("nuvio://clip?url=https%3A%2F%2Fwww.tiktok.com%2F%40someone%2Fvideo%2F7300000000000000000"),
++        )
++        assertEquals(
++            AppDeepLink.Clip("https://www.instagram.com/reel/Cabc123xyz/"),
++            parseAppDeepLink("nuvio://clip?url=https%3A%2F%2Fwww.instagram.com%2Freel%2FCabc123xyz%2F"),
++        )
++    }
++
++    @Test
++    fun `clip link keeps encoded characters`() {
++        val link = "https://vm.tiktok.com/ZM8abc/?a=1&b=two words&c=%C3%A9"
++        assertEquals(AppDeepLink.Clip(link), parseAppDeepLink("nuvio://clip?url=${link.encodeURLParameter()}"))
++    }
++
++    @Test
++    fun `rejects clip links without a usable web address`() {
++        assertNull(parseAppDeepLink("nuvio://clip"))
++        assertNull(parseAppDeepLink("nuvio://clip?url="))
++        assertNull(parseAppDeepLink("nuvio://clip?url=%20%20"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=javascript%3Aalert(1)"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=file%3A%2F%2F%2Fetc%2Fpasswd"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=ftp%3A%2F%2Fexample.com%2Fa"))
++        assertNull(parseAppDeepLink("nuvio://clip?url=https%3A%2F%2F"))
++    }
++
++    @Test
++    fun `rejects clip links longer than 2048 characters`() {
++        val prefix = "https://www.tiktok.com/"
++        val ok = prefix + "a".repeat(2048 - prefix.length)
++        assertEquals(AppDeepLink.Clip(ok), parseAppDeepLink("nuvio://clip?url=${ok.encodeURLParameter()}"))
++        val tooLong = ok + "a"
++        assertNull(parseAppDeepLink("nuvio://clip?url=${tooLong.encodeURLParameter()}"))
++    }
+ }
