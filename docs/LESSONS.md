@@ -5,3 +5,4 @@
 - A hit must be vouched for by a different triple from a different cue, or one repeated line validates itself.
 - Without Kotlin or Gradle here, port the matcher to a throwaway Python script to check test numbers before pushing; one CI run costs 7 min.
 - Compilations need every substantial cluster (4+ hits, 3+ cues), not a share-of-hits cut: a cut drops real segments and collapses confidence.
+- Caption tests must copy the shape of real captions (hashtags glued to emoji, "Modern family" half capitalised, filler tags like #movieedit): the tidy made-up captions of milestone 6 passed while the first real one found nothing.
