@@ -2411,10 +2411,10 @@ index 0000000..0bc46e7
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheck.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheck.kt
 new file mode 100644
-index 0000000..f9c0572
+index 0000000..bca049a
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheck.kt
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,248 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.PlayerSubtitleCueParser
@@ -2500,6 +2500,9 @@ index 0000000..f9c0572
 +                landed = true
 +                lastPositionMs = positionMs
 +                lastWallMs = wallMs
++            } else if (positionMs > startMs + LAND_AFTER_MS) {
++                // The first ready position is already past the clip: a skip made while the first seek buffered.
++                moved = true
 +            }
 +            return
 +        }
@@ -2511,7 +2514,9 @@ index 0000000..f9c0572
 +
 +    companion object {
 +        const val LAND_BEFORE_MS = 3_000L
-+        const val LAND_AFTER_MS = 20_000L
++        const val LAND_AFTER_MS = 5_000L
++        /** A late answer still seeks while the player is this far past the clip time. */
++        const val SEEK_AFTER_MS = 20_000L
 +        const val JUMP_MS = 3_000L
 +    }
 +}
@@ -2541,8 +2546,10 @@ index 0000000..f9c0572
 +        val planned = async { quietly { plan(target, extras, own) } ?: ClipPlayPlan(null, KEPT + "the check failed") }
 +        val watch = ClipSeekWatch(target.startMs)
 +        val started = now()
-+        while (!(planned.isCompleted && watch.landed)) {
-+            if (ready()) watch.sample(position(), now())
++        while (true) {
++            val isReady = ready()
++            if (isReady) watch.sample(position(), now())
++            if (isReady && planned.isCompleted && watch.landed && !watch.moved) break
 +            if (watch.moved || now() - started > LATE_MS) {
 +                val why = when {
 +                    watch.moved -> "you moved yourself"
@@ -2555,7 +2562,12 @@ index 0000000..f9c0572
 +            delay(POLL_MS)
 +        }
 +        val plan = planned.await()
-+        plan.seekToMs?.let(seek)
++        val seekTo = plan.seekToMs ?: return@coroutineScope plan
++        val at = position()
++        if (at !in (target.startMs - ClipSeekWatch.LAND_BEFORE_MS)..(target.startMs + ClipSeekWatch.SEEK_AFTER_MS)) {
++            return@coroutineScope ClipPlayPlan(null, KEPT + "the check finished too late", plan.detail)
++        }
++        seek(seekTo)
 +        plan
 +    }
 +
@@ -2593,6 +2605,7 @@ index 0000000..f9c0572
 +        const val MOVED = "Moved to the matching line in this video's subtitles"
 +        const val KEPT = "Kept the clip time: "
 +        const val NONE = "no subtitles for this video"
++        const val NOT_FOR_FILE = "the add-ons gave only their usual list, none made for this video"
 +        const val POLL_MS = 250L
 +        const val LATE_MS = 60_000L
 +        const val LIST_MS = 12_000L
@@ -2615,10 +2628,11 @@ index 0000000..f9c0572
 +            english.firstOrNull { it.hashMatch }?.let { return Choice(it, "", "${sourceOf(it)}: found by this file's hash") }
 +            val first = english.firstOrNull() ?: return Choice(null, NONE, "the add-ons list no English subtitles for this file")
 +            val usual = bare.firstOrNull { EpisodeSubtitleSource.isEnglish(it.language) }?.url.orEmpty()
-+            if (first.url == matchedUrl.ifBlank { usual }) {
++            if (usual.isEmpty()) return Choice(null, "could not compare with the add-ons' usual list", "the add-ons' usual list gave no English file to compare with")
++            if (first.url == usual && !first.hashMatch) return Choice(null, NOT_FOR_FILE, "the add-ons gave their usual list, not one for this file")
++            if (first.url == matchedUrl) {
 +                return Choice(null, "this video's subtitles are the file Nuvio matched with", "the add-ons' first English file is the matched one")
 +            }
-+            if (first.url == usual) return Choice(null, NONE, "the add-ons gave their usual list, not one for this file")
 +            return Choice(first, "", "${sourceOf(first)}: picked for this file (release: ${first.release.ifBlank { "none given" }})")
 +        }
 +
@@ -2943,13 +2957,15 @@ index 0000000..f7f5bde
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowPicker.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowPicker.kt
 new file mode 100644
-index 0000000..309edf9
+index 0000000..5763f33
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowPicker.kt
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,65 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.async
++import kotlinx.coroutines.coroutineScope
 +
 +/**
 + * The pick list under "Know the show?": shows and movies whose name fits what was typed, from the titles Nuvio
@@ -2972,8 +2988,13 @@ index 0000000..309edf9
 +            val shown = if (old == null || (old.first.poster == null && show.poster != null)) show else old.first
 +            picks[show.metaId] = shown to maxOf(score, old?.second ?: 0)
 +        }
-+        for (show in quietly { known() }.orEmpty()) add(show, ClipNames.typedScore(show.name, text))
-+        for ((rank, show) in quietly { search(text) }.orEmpty().take(MAX_SEARCHED).withIndex()) {
++        val (remembered, searched) = coroutineScope {
++            val knownShows = async { quietly { known() }.orEmpty() }
++            val found = async { quietly { search(text) }.orEmpty() }
++            knownShows.await() to found.await()
++        }
++        for (show in remembered) add(show, ClipNames.typedScore(show.name, text))
++        for ((rank, show) in searched.take(MAX_SEARCHED).withIndex()) {
 +            add(show, maxOf(ClipNames.typedScore(show.name, text), SEARCH_SCORE - rank))
 +        }
 +        return picks.values.sortedByDescending { it.second }.take(MAX_PICKS).map { it.first }
@@ -4134,7 +4155,7 @@ index 0000000..7d7dfec
 +    }
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreenContent.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreenContent.kt
-index 6481f0d..e74538e 100644
+index 6481f0d..e55a692 100644
 --- a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreenContent.kt
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreenContent.kt
 @@ -22,6 +22,7 @@ import androidx.compose.ui.unit.IntSize
@@ -4152,7 +4173,7 @@ index 6481f0d..e74538e 100644
 +        ClipPlayerCheck(
 +            args,
 +            position = { runtime.playbackSnapshot.positionMs },
-+            ready = { runtime.initialSeekApplied && !runtime.playbackSnapshot.isLoading && runtime.activeSourceUrl == args.sourceUrl },
++            ready = { runtime.initialSeekApplied && !runtime.playbackSnapshot.isLoading && runtime.activeSourceUrl == args.sourceUrl && !runtime.isPartySynced },
 +        ) { runtime.playerController?.seekTo(it) }
          runtime.RenderPlayerRuntimeUi(
              partyPanelWidth = partyPanelWidth,
@@ -5976,10 +5997,10 @@ index 0000000..a8053e7
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt
 new file mode 100644
-index 0000000..ea1fc2a
+index 0000000..6710d3b
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,212 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleRequestExtras
@@ -6089,7 +6110,7 @@ index 0000000..ea1fc2a
 +        assertEquals(listOf<SubtitleRequestExtras?>(null), noName.asked)
 +        val same = Fake(emptyMap(), forFileList = listOf(link(matched), link(forFile)))
 +        val samePlan = same.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { same.seeks += it }
-+        assertEquals("Kept the clip time: this video's subtitles are the file Nuvio matched with", samePlan.note)
++        assertEquals("Kept the clip time: the add-ons gave only their usual list, none made for this video", samePlan.note)
 +        assertTrue(noName.downloads.isEmpty() && same.downloads.isEmpty() && noName.seeks.isEmpty() && same.seeks.isEmpty())
 +    }
 +
@@ -6110,6 +6131,33 @@ index 0000000..ea1fc2a
 +    }
 +
 +    @Test
++    fun `a check that finishes long after the clip time does not pull the player back`() = runTest {
++        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))), downloadMs = 50_000)
++        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { fake.seeks += it }
++        assertTrue(fake.seeks.isEmpty())
++        assertEquals("Kept the clip time: the check finished too late", plan.note)
++    }
++
++    @Test
++    fun `no seek while the player is buffering again`() = runTest {
++        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))), downloadMs = 2_000)
++        fun isReady() = testScheduler.currentTime.let { it < 1_500 || it >= 4_000 }
++        var seekAt = -1L
++        fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { isReady() }) { seekAt = testScheduler.currentTime }
++        assertTrue(seekAt >= 4_000, "seeked at $seekAt")
++    }
++
++    @Test
++    fun `a first ready position well past the clip counts as moved`() {
++        val skipped = ClipSeekWatch(start)
++        skipped.sample(start + 10_000, 0)
++        assertTrue(skipped.moved && !skipped.landed)
++        val landing = ClipSeekWatch(start)
++        landing.sample(start + 4_000, 0)
++        assertTrue(landing.landed && !landing.moved)
++    }
++
++    @Test
 +    fun `which file is this video's`() {
 +        val usual = link(matched)
 +        val other = link("https://subs.example.test/other.srt")
@@ -6120,7 +6168,14 @@ index 0000000..ea1fc2a
 +        assertEquals(hashed, choose(listOf(other, hashed)).link)
 +        assertEquals("Sample Subs: found by this file's hash", choose(listOf(other, hashed)).detail)
 +        assertEquals(other, choose(listOf(french, other, usual)).link)
-+        assertEquals("this video's subtitles are the file Nuvio matched with", choose(listOf(usual, other)).why)
++        // The add-ons' answer for this file equals their usual list: nothing was checked, so say so.
++        assertEquals(ClipPlayCheck.NOT_FOR_FILE, choose(listOf(usual, other)).why)
++        // A different first file that is the one the clip was matched with.
++        assertEquals("this video's subtitles are the file Nuvio matched with", choose(listOf(other, usual), matchedUrl = other.url).why)
++        // The usual list could not be had: nothing to compare with.
++        val noBare = ClipPlayCheck.choose(emptyList(), listOf(other), emptyList(), matched)
++        assertNull(noBare.link)
++        assertEquals("could not compare with the add-ons' usual list", noBare.why)
 +        // From an older cache the matched file is not known: the add-on's usual first file stands in for it.
 +        assertNull(choose(listOf(usual, other), matchedUrl = "").link)
 +        assertEquals("the add-ons gave their usual list, not one for this file", choose(listOf(usual), matchedUrl = other.url).detail)
