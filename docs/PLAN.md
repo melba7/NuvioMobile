@@ -1,6 +1,6 @@
-Done: 3 | Last cleanup: none | Mac builds used: 1 of about 5 (milestone 3 verified on Mo's phone 2026-11-15 from branch clip-finder-share, draft PR #3)
-Next: milestones 4, 5 and 6 are built together on clip-finder-share and tested with ONE Mac build (see "Milestones 4-6 implementation notes"). Merge to cmp-rewrite only after that build passes on the phone.
-Phone test 2026-11-16 (Mac build 2): milestones 4 and 5 work (link read, 11 lines heard); 6 stopped at "Show guesses: none". Next: 7a (planned, see "Milestone 7a implementation notes"), then tick 4-6 with it.
+Done: 7 | Last cleanup: none | Mac builds used: 3 of about 5 (7a on TestFlight from branch clip-finder-share, draft PR #3; works on Mo's phone 2026-11-16)
+Next: 7c + 7d together, tested with ONE Mac build (build 4; see "Milestones 7c-7d implementation notes"), then 7b (build 5). Merge to cmp-rewrite after 7b.
+Phone test 2026-11-16 (Mac build 3): 7a works. Mo then asked for the YouTube video, more speed and accuracy, and an Instagram fix (reel: "Video address found: no").
 
 Waiting on Mo: 1 movie clip with its name and rough time.
 Approved by Mo 2026-11-15: reading audio from the link (SPEC A2).
@@ -492,7 +492,7 @@ ASSUMPTIONS (cannot be checked from here)
 When done: add to docs/ARCHITECTURE.md decisions "Share extension opens the app through the responder chain,
 notification as fallback" and "Shared video = file:// link parsed in Kotlin, opened in place".
 
-- [ ] **4. Read the link** (Mac build 2; the riskiest step, one session only)
+- [x] **4. Read the link** (Mac build 2; the riskiest step, one session only)
   - Build: `ClipLinkReader` (follow short links; caption from the TikTok page metadata, since
     oEmbed no longer has it; Instagram embed
     page) -> `ClipInfo`. Parsing is tested against saved sample responses in commonTest.
@@ -504,7 +504,7 @@ notification as fallback" and "Shared video = file:// link parsed in Kotlin, ope
   - Try it: share each test link; read the caption and the seconds shown.
   - Files: clipfinder/ClipLinkReader.kt + tests + fixtures, iosApp/iosApp/ClipFinder/ClipAudio.swift.
 
-- [ ] **5. Hear and read the clip** (Mac build 3)
+- [x] **5. Hear and read the clip** (Mac build 3)
   - Build: `ClipTranscriber.swift`: Apple Speech with on-device recognition required, for
     link audio and for a shared video file (audio pulled with AVFoundation). Normalise
     loudness, then recognise 30 s chunks and add each chunk's offset (one request on a long
@@ -517,7 +517,7 @@ notification as fallback" and "Shared video = file:// link parsed in Kotlin, ope
   - Try it: airplane mode on, share a saved clip to Nuvio, read the lines.
   - Files: iosApp/iosApp/ClipFinder/ClipTranscriber.swift, Info.plist, clipfinder bridge file.
 
-- [ ] **6. Find it and play it** (Mac build 4)
+- [x] **6. Find it and play it** (Mac build 4)
   - Build: `ShowGuesser` (caption + hashtags -> search -> top 3; "S2E5" hints first),
     `EpisodeSubtitleSource` (episode list, add-on subtitles 6 at a time, disk cache capped
     at 50 MB, early stop), wired to `ClipMatcher`. Candidates list on Clip finder. Tap ->
@@ -3067,7 +3067,8 @@ ASSUMPTIONS (cannot be checked from here; each has a visible symptom above)
 - B8 App Store Connect accepts the build with the new speech permission text (a refusal is an ITMS line at upload).
 - B9 The Kotlin in section H compiles; it was written without a compiler. "Fork check" settles it in 8 min.
 
-- [ ] **7a. Find the show without a good caption** (Mac build 3; notes below)
+- [x] **7a. Find the show without a good caption** (Mac build 3; notes below)
+  - Phone 2026-11-16: works (Mo). Its done-when (3) and (6) were not shown yet: they are check 5 of 7c.
   - Why: Mo's first phone test (2026-11-16) read the link and heard 11 lines, then stopped at "Show guesses:
     none" for the caption "The best part of Modern family.❤️❤️#edit #movieedit #modernfamily #fyp #viral".
   - Build (Mo's picks of 2026-11-16): smarter reading of the caption (hashtags glued to emoji, half-capitalised
@@ -6677,7 +6678,7 @@ ASSUMPTIONS (cannot be checked from here)
   6 catalogs, so the worst case is 48 small requests, once per clip, only when nothing else matched.
 
 
-- [ ] **7b. Fallbacks, tuning, ship** (Mac build 4)
+- [ ] **7b. Fallbacks, tuning, ship** (Mac build 5; as before. Do 7c and 7d below FIRST: 7b tunes with their Match and Timings lines)
   - Build: clear failure messages (SPEC 8), 60 s stage limit with a message, tune matcher thresholds on Mo's
     real clips, flip the default to "After the clip" if Mo still wants SPEC 6 as written, add a Clip finder
     section to FORK.md.
@@ -6685,6 +6686,3152 @@ ASSUMPTIONS (cannot be checked from here)
   - Done when: every SPEC check passes on the phone.
   - Try it: one clip of each kind: named show, no caption, music only, movie.
   - Files: clipfinder/*, FORK.md.
+
+- [ ] **7c. Open the YouTube video, fix Instagram** (Mac build 4, together with 7d; notes below)
+  - Why (Mo, 2026-11-16, after 7a worked): many clips are cut from a YouTube video, often not from a show at all
+    (interviews, podcasts). And an Instagram reel stopped at "Video address found: no"; its caption was read as
+    "585K likes, 550 comments - handle on December 15, 2025: "...", with the counts and quote marks in it.
+  - Build: search YouTube with words from the page (no account, no API key of ours), read the captions of up to
+    6 videos while the clip is listened to, keep only videos whose captions match what was heard (the same
+    matcher as for episodes) and open the YouTube app at that moment: by itself when it is the only sure answer,
+    on a tap otherwise. Instagram: try the embed page and the post page for the video address (never a blob:
+    address), clean the og:description into caption + handle, and when there is still no video but the caption
+    names a show, offer that show's page (episode list) and the type-the-show box. Details lists every
+    Instagram page tried, every YouTube search and why a video's captions could not be read.
+  - Done when: (1) "Fork check" is green, including the new YouTube, Instagram and pipeline tests; (2) on the
+    phone a clip cut from a YouTube interview (no show) opens the YouTube app within 10 s of the clip's moment;
+    (3) a show clip that is also on YouTube shows the episode first and the YouTube card below, and nothing
+    opens by itself; (4) the Instagram reel that failed shows `Instagram: ...` in Details and either reaches
+    listening or offers the show named in its caption; its `Caption` line has no "likes" and no quote marks,
+    and `Author` is the handle; (5) 7a's open checks: a saved video with no caption reaches its episode after
+    typing the show with "Listening" run once, and no clip stops only because the caption is empty.
+  - Try it: share a clip of a YouTube interview or podcast; share a show clip; share the Instagram reel again;
+    share a saved video from Files and type the show. Send a screenshot of Details for each.
+  - Files: clipfinder/* (7 new, 6 changed Kotlin; 6 new test files, 1 changed), MainAppContent.kt (one line),
+    iosApp/iosApp/ClipFinder/ClipPageReader.swift (page script only; droppable).
+  - Wait for OK before starting (20+ files; a new kind of network use: YouTube's own page key).
+
+- [ ] **7d. Faster and more accurate** (Mac build 4, together with 7c; notes below)
+  - Why: Mo finds the search slow. Nothing on the screen says where the time goes, so first measure, and
+    change only what the code shows is serial waiting.
+  - Build: a `Timings` line in Details (seconds per stage, work beside the stages, total); while the clip is
+    listened to, the show the page names strongly (score 90+) has its episode list and up to 36 subtitle files
+    fetched into the cache, and YouTube is searched; episodes whose summary holds a rare word that was heard are
+    tried earlier; a `Match` line with the numbers behind "sure" (shared phrases, share, runner-up) for 7b's
+    tuning. No matcher threshold changes (that is 7b, with these numbers).
+  - Done when: (1) "Fork check" is green, including the timing, ranking and prefetch tests; (2) every run on the
+    phone ends with a `Timings` line; (3) for a clip whose page names the show (an exact hashtag), Details shows
+    `Fetched while listening: <show>: N subtitle files` and the `subtitles` stage after listening is shorter
+    than the `prefetch` work beside it; (4) the hypotheses H1-H4 of decision 9 are written down as confirmed or
+    not, with the Timings lines of Mo's test clips, in docs/LESSONS.md or under "Later".
+  - Try it: share the Modern Family clip again and read `Timings`, `Fetched while listening` and `Match`.
+  - Files: in the 7c list (ClipTimings, ClipPrefetch, ClipEpisodeRank, ClipShowSearch, pipeline, session).
+
+### Milestones 7c-7d implementation notes (written 2026-11-16)
+Checked against the work tree as it is on TestFlight (milestones 4-7a applied). Same rules as the 7a notes: paths
+are inside `../nuvio-work` unless they start with `fork/` or `docs/`; `K` = `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder`,
+`T` = the same package under `commonTest`, `S` = `iosApp/iosApp/ClipFinder`. Where these notes differ from older
+text, these notes win. 7c and 7d are built together and tested with ONE Mac build (build 4).
+
+Not checked here: nothing below was compiled or run (no Kotlin, Gradle or Swift in the cloud workspace). The one
+Swift change (page script only) was syntax-parsed with tree-sitter-swift and its JavaScript with `node --check`.
+The Instagram regular expressions and their test values were run as a Python copy; every other test value was
+traced by hand against the code. Kotlin errors show in "Fork check" (8 min); Swift errors only in the Mac build.
+
+Where the page keys come from: tiktok.com, instagram.com and youtube.com are blocked in the cloud workspace, so no
+live page was saved. The key names below were read on 2026-11-16 in the source of two open-source tools,
+downloaded with `pip download` (not installed, not run): youtube-transcript-api 1.2.5 (YouTube captions) and
+yt-dlp 2026.10.26 (YouTube search pages, Instagram). Each key has a confidence; the Details lines added here say
+on the phone which key failed.
+
+#### A. Decisions
+1. YouTube is searched BESIDE the show search, never instead of it and never before it. For a link it starts as
+   soon as the page is read (it needs only the page's words) and runs while the clip is listened to; for a shared
+   file it starts after listening (it needs the text on screen). The show search runs as before; only then are the
+   YouTube videos checked against what was heard. YouTube has 60 s from its start; a slow YouTube never delays an
+   episode answer by more than what is left of those 60 s, and a failed YouTube is only a Details line.
+2. A YouTube video is shown only when its captions match what was heard by the matcher's own "confident" rule
+   (4+ hits in the main cluster, 15% of the clip's phrases, twice the runner-up), each video matched on its own:
+   re-uploads of the same video match equally and must not count as each other's runner-up. A wrong guess is
+   therefore never shown and never opened. At most 3 are shown; among videos with at least 80% of the best hits
+   the longest comes first (the full video, not a short cut of it).
+3. What the screen does with the answers:
+   | Episode answers | YouTube answers | Screen |
+   |---|---|---|
+   | confident | any | episode cards first, YouTube card below; nothing opens by itself |
+   | weak only, or none | 1+ | stage "Done"; the YouTube card; the first video opens in the YouTube app by itself, once (`openYouTube`), at the same start time rule as episodes ("from clip start" or "after the clip") |
+   | none | none | the old failure message |
+   The YouTube card says "On YouTube (tap to open the YouTube app)", one line per video: "title (channel)" and
+   "at 2:05 to 3:10, 88% sure. Opens at 2:05". A typed show name keeps the YouTube answers found before; a typed
+   search that finds no episode still ends with its failure message (YouTube card stays visible).
+4. Opening: `https://www.youtube.com/watch?v=<id>&t=<seconds>s` through Compose's `LocalUriHandler.openUri`. On iOS
+   that is `UIApplication.open`, and YouTube's universal link opens the YouTube app when installed, Safari
+   otherwise. No Swift, no Info.plist change (universal links need no `LSApplicationQueriesSchemes`).
+   Confidence the app (not Safari) opens: about 85%. Confidence `t=` is honoured by the app: about 80%.
+5. Reading YouTube without an account and without a key of our own (the youtube-transcript-api route):
+   | Step | What is sent / read | Source | Confidence |
+   |---|---|---|---|
+   | search | GET `https://www.youtube.com/results?search_query=<words>&sp=EgIQAQ%253D%253D` with a desktop Safari User-Agent, `Accept-Language: en-US`, cookie `SOCS=CAI` (skips the consent page). A phone User-Agent gets m.youtube.com, whose data is a JS string | yt-dlp | 80% |
+   | video ids | `"videoId":"<11 chars>"` (or `contentId`, new lockup view) counted from `ytInitialData` on, in page order, first 8 | yt-dlp | 80% |
+   | page key | `"INNERTUBE_API_KEY":"..."` in the same page (else in the first watch page). Public: every visitor's page carries it; it is not our key and not a secret | youtube-transcript-api | 85% |
+   | captions list | POST `https://www.youtube.com/youtubei/v1/player?key=<page key>` with `{"context":{"client":{"clientName":"ANDROID","clientVersion":"20.10.38"}},"videoId":"<id>"}`; read `videoDetails.title/author/lengthSeconds` and `captions.playerCaptionsTracklistRenderer.captionTracks[].baseUrl/languageCode/kind` (`asr` = automatic) | youtube-transcript-api | 65% (YouTube changes what it accepts from "ANDROID" clients often) |
+   | token check | a `baseUrl` with `&exp=xpe` needs a token from YouTube's own player: skipped, Details says so | youtube-transcript-api | 60% |
+   | captions | GET the `baseUrl` without `&fmt=srv3`: XML `<text start="1.5" dur="2.2">words</text>`, HTML-escaped inside | youtube-transcript-api | 80% |
+   English only (`en`, `en-*`), captions written by people before automatic ones. Up to 3 searches, 6 videos (the
+   best-ranked of each search in turn), 3 videos at a time, 10 s per request, answers capped at 6 MB.
+   Mo's rule "no API keys" is kept: the app holds no key; the page's own public key is read each time.
+6. YouTube search words (`ClipYouTube.queries`), best first, at most 3: the page's first keyword; the caption
+   without links, hashtags and @names; the first 3 pieces of text on screen. Each needs 2+ words and 6+ letters,
+   at most 10 words. Only when none of these gives a search: the first 2 hashtags without filler (5+ letters).
+   Only when still nothing: the sound title, never "original sound - ...". No search when there is nothing: a
+   `YouTube: no words to search with` line.
+7. Instagram (7c part 2). Phone test 2026-11-16: the reel page (logged out) has no video address. Order of tries,
+   stopping at the first that gives an https address:
+   | Try | How | Source | Confidence it gives the video today |
+   |---|---|---|---|
+   | 0 | the shared page in the off-screen web view, as now | phone | failed once |
+   | 1 | the embed page `https://www.instagram.com/p/<code>/embed/captioned/` as a plain download (iPhone Safari User-Agent, about a second): `video_url` (plain JSON, or escaped inside `contextJSON`), `video_versions[].url`, `<video src="https://...">`, `og:video` | older yt-dlp | 35% |
+   | 2 | the post page `/p/<code>/` in the off-screen web view; its scripts with `xig_polaris_media` ... `video_versions[].url` are handed back whole as `raw` (Swift page script change) and searched as text when they are not JSON | yt-dlp 2026.10.26 (its logged-out web route) | 45% |
+   | 3 | the embed page in the off-screen web view (scripts run, the player may fill `video_url`) | older yt-dlp | 30% |
+   `blob:` and `http:` addresses are never used. The code is read from `/reel/`, `/reels/`, `/p/`, `/tv/`, also after a
+   handle (`/sample.user/reel/<code>/`). Not built: Instagram's GraphQL route (needs a token taken from the page and
+   impersonation; parked under Later). Confidence that at least one try works: about 55%. When none works, the
+   reel still gets decision 8.
+8. Instagram's og:description `585K likes, 550 comments - handle on December 15, 2025: "caption".` becomes the
+   caption (counts, handle, date and quote marks removed, straight or curly) and the author (the handle). Any
+   other text is kept as it is. Confidence the shape holds: high (seen on the phone).
+9. No clip to hear (no video address, or no speech) but a clue names a show at score 85+ (its name in the caption,
+   a hashtag, a keyword): the failure message gets "The caption names the show below: open it to pick the episode
+   yourself." and a card "Open the show and pick the episode" lists up to 3 shows; a tap opens Nuvio's normal show
+   page (`DetailRoute`, upstream) with its episode list. The type-the-show box also shows ("Nuvio finds the show so
+   you can open it."); a typed name then only finds the show to open (`OPEN_TYPED_SHOW`), never searches subtitles.
+10. Speed (7d). Where the time goes, from reading the code (NOT measured: there was no timing line until now):
+   every step runs one after the other; popular catalogs (up to 8 x 8 s) are fetched inside the show guess after
+   listening; subtitles are fetched in season order 6 at a time and each batch waits for its slowest file (the
+   Modern Family clip was S1E20: up to 24 files before the right one); listening itself is the longest step and
+   uses no network, so the network sits idle meanwhile. Changes, each with what it should do (hypotheses, to be
+   confirmed with the `Timings` line, no number promised):
+   - H1 Prefetch: while listening, the show the page alone names at 90+ (exact or filler hashtag, this poster's last
+     show) gets its episode list and the subtitles of its first 36 episodes (hinted episode and season first) into
+     the cache, 6 at a time; stopped when listening ends. Expected: for such clips the `subtitles` stage after
+     listening shrinks to matching only; no change for other clips; a wrong guess costs only idle network.
+   - H2 Episode order: episodes whose title or summary (`overview`, already loaded by upstream) hold a heard word
+     of 4+ letters that is in at most a fifth of the summaries come first (rarer word, more weight); the hinted
+     episode stays first and files already fetched come next. Expected: fewer episodes tried (`subtitles (N
+     episodes)`) when a guest or a rare thing is named; never a different answer (order only).
+   - H3 YouTube beside: expected `YouTube wait` near 0 s whenever the show search takes longer than YouTube.
+   - H4 Popular titles fetched during listening (by the prefetch's own guess): expected a shorter `guess` stage.
+   Accuracy: unchanged matcher. New `Match` line: "41 shared phrases of 160 heard (25%), next best 3", the numbers
+   7b needs to tune the 15% bar on real clips.
+11. `Timings` line (last Details line of every run): `page 6.1 s, download 3.2 s, YouTube 9.4 s (6 videos) beside,
+   listen 21.4 s (part 3 of 3), guess 1.2 s, episode list 0.8 s, subtitles 4.0 s (12 episodes), YouTube wait 0.0 s,
+   total 37.0 s` (example of the format, not a measurement). Stages are laps of one clock; "beside" marks work that
+   ran next to them. Stage names: page, Instagram pages, download, frames, sound, listen, guess, names, episode
+   list, subtitles, YouTube wait; beside: prefetch, YouTube.
+12. Parked, each with the measurement that would bring it back: stop listening early once a confident match exists
+   (when `listen` is more than half of `total`); a sliding window of 6 instead of batches (when `subtitles` is
+   long with few episodes); reading frames while downloading (Swift, when `frames` is over 3 s); a matcher change
+   for noisy speech (7b, from `Match` lines); Instagram's GraphQL route (when all three tries fail on real reels).
+
+#### B. Contract changes between Swift and Kotlin
+`ClipFinderNative.kt` does not change (still exactly 17 functions; the 7a pre-flight count stays). The only change
+is in the JSON text that `readPage` hands back: an optional `"raw": [string, ...]`, the whole text of every script
+that contains `video_url` or `video_versions`, whatever its type, at most 2,000,000 characters in all. Those
+scripts are no longer also put in `"scripts"`. Kotlin treats a missing `raw` as empty, so worker 3 can be dropped
+alone. No Kotlin API is newly called from Swift (no Kotlin/Native name changes). New Details lines, all from
+Kotlin: `Instagram`, `Show from the caption`, `YouTube`, `YouTube searches`, `YouTube captions`, `YouTube match`,
+`Fetched while listening`, `Match`, `Timings`.
+
+#### C. Files
+| Worker | File | What |
+|---|---|---|
+| 1 | new `K/ClipYouTube.kt`, `T/ClipYouTubeTest.kt` | search words, addresses, ids, page key, player answer, caption XML, the check (decisions 2, 5, 6) |
+| 1 | new `K/ClipYouTubeFinder.kt`, `T/ClipYouTubeFinderTest.kt` | the YouTube requests and their Details lines (`ClipWebReply`, `FakeTube`) |
+| 1 | new `K/ClipInstagram.kt`, `T/ClipInstagramTest.kt` | post code, description, video addresses, the tries (decisions 7, 8) |
+| 1 | changed `K/ClipPageParser.kt` | reads `raw`; Instagram description -> caption and author |
+| 1 | new `K/ClipTimings.kt`, `T/ClipTimingsTest.kt` | decision 11 |
+| 1 | new `K/ClipEpisodeRank.kt`, `T/ClipEpisodeRankTest.kt` | H2; needs the `overview` edit of section G |
+| 2 | new `K/ClipPrefetch.kt` | H1 |
+| 2 | new `K/ClipShowSearch.kt` | the old pipeline search, moved, plus rank, prefetch reuse, `Match` line |
+| 2 | changed `K/ClipFinderState.kt` | `youtube`, `openYouTube`, `shows`, `noClip`; 2 messages; `clipCanType`; `clipMatchDetail`, `clipVideoTitle` |
+| 2 | changed `K/ClipFinderPipeline.kt`, new `T/ClipFinderPipelineWebTest.kt` | Instagram tries, prefetch and YouTube beside listening, offer shows, timings |
+| 2 | changed `K/ClipFinderSession.kt` | wiring, `clipWebGet` / `clipWebPost` (upstream HTTP helpers), episode `overview`, `youTubeOpened` |
+| 2 | changed `K/ClipFinderScreen.kt`, `K/ClipFinderParts.kt` | YouTube card and auto-open, shows card, type card text |
+| 3 | changed `S/ClipPageReader.swift` | page script only (section B); last, droppable |
+
+20 files written from section H, plus the edits of section G (`EpisodeSubtitleSource.kt` 1 line, `MainAppContent.kt`
+1 line, `ClipFinderPipelineTest.kt` 3 assertions). Every file is under 300 lines except `ClipFinderPipeline.kt`
+(341; splitting it is under Later). No `project.pbxproj` or Info.plist change, no new dependency, no new permission.
+
+#### D. Steps, one worker after the other in the same work tree
+Never hand-type the files. This script copies the "File:" blocks of THIS section only (the 7a script stops at
+"- [ ] **7b." and still finds its 25). Paste as it stands:
+```bash
+cat > /tmp/clip7c_files.py <<'PY'
+import re, sys, os
+mode, plan, tree = sys.argv[1], sys.argv[2], sys.argv[3].rstrip("/")
+only = sys.argv[4:]                                    # optional: path fragments to limit to
+text = open(plan, encoding="utf-8").read()
+text = text[text.index("### Milestones 7c-7d implementation notes"):text.index("\n- [ ] **8.")]
+blocks = re.findall(r"^##### File: `([^`]+)`\n```[a-z]*\n(.*?)\n```$", text, re.M | re.S)
+assert len(blocks) == 20, "expected 20 file blocks, found %d" % len(blocks)
+bad = 0
+for path, body in blocks:
+    if only and not any(o in path for o in only): continue
+    full, body = os.path.join(tree, path), body + "\n"
+    if mode == "write":
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        open(full, "w", encoding="utf-8").write(body)
+        print("wrote", path)
+    elif not os.path.exists(full) or open(full, encoding="utf-8").read() != body:
+        bad += 1; print("DIFFERENT", path)
+if mode == "check": print("all files match the plan" if not bad else "%d files differ" % bad); sys.exit(1 if bad else 0)
+PY
+```
+0. Everyone: `fork/dev-tree.sh` (the work tree must hold 7a: `ls ../nuvio-work/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder | wc -l`
+   prints 17), save the two scripts (this one and `/tmp/clip7c_edits.py` of section G), and
+   `git -C ../nuvio-work status --porcelain > /tmp/clip7c_before.txt`.
+1. Worker 1 (pure logic and its tests): `python3 /tmp/clip7c_files.py write docs/PLAN.md ../nuvio-work ClipYouTube ClipInstagram ClipPageParser ClipTimings ClipEpisodeRank`
+   (11 files: `ClipYouTube` also matches `ClipYouTubeFinder` and both tests), then the `overview` edit of section G
+   (`python3 /tmp/clip7c_edits.py ../nuvio-work overview`). Read the five Kotlin files against decisions 2, 5-8, 10,
+   11 and follow each `assertEquals` of the five test files by hand once. Report any value you cannot reproduce; do
+   not "fix" a test. The tree does not compile between worker 1 and worker 2 (`ClipYouTubeTest` uses
+   `clipMatchDetail`, which worker 2 adds): fine.
+2. Worker 2 (glue, screen, tests): `python3 /tmp/clip7c_files.py write docs/PLAN.md ../nuvio-work ClipPrefetch ClipShowSearch ClipFinderState ClipFinderPipeline ClipFinderSession ClipFinderScreen ClipFinderParts`
+   (8 files: `ClipFinderPipeline` also matches `ClipFinderPipelineWebTest`), then
+   `python3 /tmp/clip7c_edits.py ../nuvio-work main tests`. Then `grep -rn "ClipFinderScreen(" ../nuvio-work/composeApp/src/commonMain`
+   must show the `onShow =` argument, and `grep -rlw "ClipFinderNative" ../nuvio-work/composeApp/src` must list exactly
+   `ClipFinderNative.kt`, `ClipFinderPipeline.kt`, `ClipFinderSession.kt`, `ClipFinderPipelineTest.kt` and
+   `ClipFinderPipelineWebTest.kt`.
+3. Worker 3 (Swift, last): `cp ../nuvio-work/iosApp/iosApp/ClipFinder/ClipPageReader.swift /tmp/ClipPageReader.old.swift`,
+   then `python3 /tmp/clip7c_files.py write docs/PLAN.md ../nuvio-work ClipPageReader` (1 file), then
+   `diff /tmp/ClipPageReader.old.swift ../nuvio-work/iosApp/iosApp/ClipFinder/ClipPageReader.swift`: only the doc
+   comment (2 lines added), `raw: []` in `out`, `var rawTotal = 0;` and the 6-line `media` block in the script loop
+   (the `if (!named ...)` line moves below it) may differ. To drop it: copy the old file back (Kotlin then sees no
+   `raw`; Instagram try 2 finds less). Run the pre-flight, then `fork/dev-tree.sh save`.
+4. Lead: commit `fork/nuvio-share-resume.patch` + docs, push, wait for "Fork check". Kotlin errors are fixed in the
+   work tree (then save again); a test is never weakened: if a traced value was wrong, find out which side is wrong
+   first. Then `gh workflow run TestFlight --ref clip-finder-share` (one Mac build, about 70 min).
+5. When green on the phone: tick 7c and 7d; `docs/ARCHITECTURE.md`: data flow gets "YouTube beside the show
+   search, checked with the matcher, opened by universal link" and "Instagram: embed download, post page, embed page";
+   decisions log: "YouTube read with its page's public key, no key of ours (Mo's rule kept)", "A YouTube video is
+   shown only when its captions match", "Prefetch while listening at score 90+", "Episode order by rare words in
+   summaries"; write H1-H4 as confirmed or not, with the Timings lines.
+
+#### E. Tests (all six new test files are given in full in section H; all data made up)
+- `ClipYouTubeTest` (9): ids from the results page in order, not before `ytInitialData`, and the page key; the
+  player answer (details, tracks) and the English, people-first track choice; the token mark; caption XML with
+  double escaping, `&#39;`, tags, attributes in any order, a blank cue and a missing `dur`; the three search sources;
+  hashtags and sound only as fallbacks ("original sound" never); `openUrl` (`t=125s`, never negative) and the
+  search address; the check keeps the full upload first and drops a video that does not match; title and detail
+  text. Holds `ClipTubeSamples` (made-up player JSON, caption XML, results page).
+- `ClipYouTubeFinderTest` (3): three videos give the exact Details lines (`2 lines (auto)`, `captions need
+  YouTube's token`, `no English captions`), the cookie and User-Agent are sent; no words: no request at all; no page
+  key: the watch page is tried and the line says why; a refused search shows `HTTP 429`. Holds `FakeTube`.
+- `ClipInstagramTest` (6): post codes from 7 link shapes; the description in 3 real shapes and 2 non-matches;
+  addresses at three escaping levels, an empty `video_versions`, `<video>` and `og:video`, never `blob:` or `http:`;
+  the tries in order with the exact `Instagram` line; nothing found anywhere; the parser reads `raw` (JSON walked,
+  text searched) and the description.
+- `ClipTimingsTest` (2), `ClipEpisodeRankTest` (2): exact line; rare word first, common word ignored, hint and
+  cache first.
+- `ClipFinderPipelineWebTest` (5): a YouTube-only clip ends "Done" with `openYouTube`; an episode plus YouTube does
+  not open by itself; an Instagram reel gets its address from the embed download (exact `Instagram` line, clean
+  caption and author, page read once); no video: show offered, then a typed name gives `OPEN_TYPED_SHOW` with no
+  listening; while a held `listen` waits, all 12 subtitle files are fetched and YouTube is asked, nothing is
+  downloaded twice afterwards, the episode list is loaded once, `Timings` has `prefetch 0.0 s (12 files) beside`.
+- `ClipFinderPipelineTest` (3 assertions changed in section G, nothing removed): the first test's Details labels now
+  end `"Subtitles", "Match", "Candidates", "Timings"`; "a page without a video address" and "no speech" now expect
+  the `OPEN_SHOW` sentence and the offered show (the old message is the start of the new one).
+`ClipMatcherTest`, `ClipPageParserTest`, `EpisodeSubtitleSourceTest`, `ClipFinderStateTest`, `ClipFinderScreenTest`
+and the 7a test files stay green unchanged (traced: `clipCanType` keeps its old answers when `noClip` is false; the
+`ClipEpisode` constructor only gains a last parameter with a default).
+
+#### F. Pre-flight before pushing
+```bash
+W=../nuvio-work; S=$W/iosApp/iosApp/ClipFinder
+python3 /tmp/clip7c_files.py check docs/PLAN.md $W                    # all files match the plan
+git -C $W status --porcelain | diff /tmp/clip7c_before.txt -            # prints nothing: no new changed or new upstream file
+                                                                      # (MainAppContent.kt was already changed by the fork)
+grep -c "overview" $W/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt   # 1
+grep -n "onShow = { show ->" $W/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt               # 1 line
+grep -rniE "api[_-]?key\s*=|AIza" $W/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/   # prints nothing: no key in the app
+python3 - $W <<'PY'                                                   # the bridge is unchanged
+import re, sys
+k = open(sys.argv[1] + "/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderNative.kt").read()
+assert len(re.findall(r"^\s*fun ", k, re.M)) == 17, "ClipFinderNative.kt must still declare exactly 17 functions"
+s = open(sys.argv[1] + "/iosApp/iosApp/ClipFinder/ClipPageReader.swift").read()
+js = s[s.index('#"""') + 4:s.index('"""#')]
+open("/tmp/clip7c_page.js", "w").write(js)
+assert "raw: []" in js and "out.raw.push(text)" in js and "rawTotal + text.length <= 2000000" in js
+print("contract OK")
+PY
+node --check /tmp/clip7c_page.js && echo "page script OK"            # node is in the cloud workspace (/opt/node22/bin)
+pip install -q tree-sitter tree-sitter-swift && python3 - $S <<'PY'
+import glob, sys, tree_sitter_swift
+from tree_sitter import Language, Parser
+p = Parser(Language(tree_sitter_swift.language()))
+for f in sorted(glob.glob(sys.argv[1] + "/*.swift")):
+    assert not p.parse(open(f, "rb").read()).root_node.has_error, f + ": syntax error"
+print("swift syntax OK")
+PY
+fork/dev-tree.sh save
+```
+Reading checks for the Swift file: the change is inside the `#"""` JavaScript string only; no Swift line outside
+the doc comment changes; `continue` after `out.raw.push(text)` keeps a raw script out of `out.scripts` (so the 3 MB
+cap of `scripts` is not spent on it); the existing `known` early stop is untouched.
+What each check proves: Fork check = all Kotlin compiles and the tests pass; nothing about Swift or the live sites.
+Mac build = Swift compiles. Phone = section I.
+
+#### G. Edits to existing files
+Run after writing the files. Exact replacements; the script stops if a text is not found exactly once:
+```bash
+cat > /tmp/clip7c_edits.py <<'PY'
+import sys, os
+tree, parts = sys.argv[1].rstrip("/"), set(sys.argv[2:])
+K = "composeApp/src/commonMain/kotlin/com/nuvio/app"
+T = "composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder"
+edits = {
+  "overview": [(K + "/features/clipfinder/EpisodeSubtitleSource.kt",
+    "    val thumbnail: String? = null,\n)",
+    "    val thumbnail: String? = null,\n    /** The episode's summary from the add-on; [ClipEpisodeRank] reads it. */\n    val overview: String? = null,\n)")],
+  "main": [(K + "/MainAppContent.kt",
+    "ClipFinderScreen(source = route.source, onBack = onBack, onOpen = ::openClipAnswer)",
+    "ClipFinderScreen(source = route.source, onBack = onBack, onOpen = ::openClipAnswer, onShow = { show -> navController.navigate(DetailRoute(type = show.type, id = show.metaId, title = show.name)) })")],
+  "tests": [
+    (T + "/ClipFinderPipelineTest.kt",
+     "\"Known titles\", \"Searches\", \"Show guesses\", \"Subtitles\", \"Candidates\",",
+     "\"Known titles\", \"Searches\", \"Show guesses\", \"Subtitles\", \"Match\", \"Candidates\", \"Timings\","),
+    (T + "/ClipFinderPipelineTest.kt",
+     "        assertFailed(h, ClipStage.ReadingLink, ClipMessages.NO_VIDEO, fileHint = true)\n",
+     "        assertFailed(h, ClipStage.ReadingLink, ClipMessages.NO_VIDEO + \" \" + ClipMessages.OPEN_SHOW, fileHint = true)\n"
+     "        assertEquals(listOf(show), h.last.shows)\n        assertTrue(clipCanType(h.last))\n"),
+    (T + "/ClipFinderPipelineTest.kt",
+     "        assertFailed(h, ClipStage.Listening, ClipMessages.NO_SPEECH, fileHint = false)\n",
+     "        assertFailed(h, ClipStage.Listening, ClipMessages.NO_SPEECH + \" \" + ClipMessages.OPEN_SHOW, fileHint = false)\n"
+     "        assertEquals(listOf(show), h.last.shows)\n"),
+  ],
+}
+for part in sorted(parts):
+    for path, old, new in edits[part]:
+        full = os.path.join(tree, path)
+        text = open(full, encoding="utf-8").read()
+        assert text.count(old) == 1, "%s: expected the old text once, found %d" % (path, text.count(old))
+        open(full, "w", encoding="utf-8").write(text.replace(old, new))
+        print("edited", path)
+PY
+```
+`MainAppContent.kt` is upstream, already changed by the fork on this very line; `DetailRoute` comes from the
+`com.nuvio.app.navigation.*` import it already has, and `navController.navigate(DetailRoute(...))` is how it opens a
+show elsewhere (the library poster). Nothing is reformatted.
+
+#### H. The files
+Write them with the script of section D. The block header is the path inside the work tree.
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipYouTube.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleSyncCue
+import io.ktor.http.encodeURLParameter
+import kotlin.math.roundToLong
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
+/** A YouTube video that may hold the clip, with its captions (empty when none could be read). */
+data class ClipVideo(
+    val id: String,
+    val title: String = "",
+    val channel: String = "",
+    val seconds: Int = 0,
+    val cues: List<SubtitleSyncCue> = emptyList(),
+)
+
+/** A YouTube video whose captions line up with what was heard: the clip comes from it. */
+data class ClipVideoAnswer(val video: ClipVideo, val candidate: ClipCandidate)
+
+/** One caption file of a video as YouTube lists it; [auto] for captions made by YouTube's own speech recognition. */
+data class ClipCaptionTrack(val url: String, val language: String, val auto: Boolean)
+
+/**
+ * Reading YouTube without an account and without a key of our own, the way the open-source
+ * youtube-transcript-api 1.2.5 does (its source was read on 2026-11-16): the results page lists video
+ * ids and carries the page's own public INNERTUBE_API_KEY; the player answer for YouTube's Android app
+ * lists the caption files; a caption file is XML (<text start="1.2" dur="3.4">words</text>). Pure
+ * functions; the network is in [ClipYouTubeFinder].
+ */
+object ClipYouTube {
+    /** A desktop browser: with a phone's User-Agent YouTube answers with m.youtube.com, whose page data is a JS string. */
+    const val DESKTOP_AGENT =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    const val ANDROID_CLIENT_VERSION = "20.10.38"
+    const val MAX_QUERIES = 3
+    private const val MAX_QUERY_WORDS = 10
+    private const val MAX_IDS = 8
+    private val idPattern = Regex("\"(?:videoId|contentId)\":\"([A-Za-z0-9_-]{11})\"")
+    private val keyPattern = Regex("\"INNERTUBE_API_KEY\":\\s*\"([A-Za-z0-9_-]+)\"")
+    private val textPattern = Regex("<text([^>]*)>([\\s\\S]*?)</text>")
+    private val startPattern = Regex("start=\"([0-9.]+)\"")
+    private val durationPattern = Regex("dur=\"([0-9.]+)\"")
+    private val numbered = Regex("&#(\\d{1,6});")
+    private val tagPattern = Regex("<[^>]*>")
+    private val linkOrTag = Regex("(?:https?://|[#@])\\S+")
+    private val originalSound = Regex("^\\s*original (?:sound|audio)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * At most 3 searches, best first: the page's own keyword, the caption's words, the text on screen.
+     * Hashtags only when none of these gives words; the sound title only when nothing else does
+     * ("original sound - poster" never).
+     */
+    fun queries(clues: ClipClues): List<String> {
+        val found = mutableListOf<String>()
+        fun add(text: String) {
+            val words = plainWords(text).take(MAX_QUERY_WORDS)
+            if (words.size >= 2 && words.sumOf { it.length } >= 6) found += words.joinToString(" ")
+        }
+        clues.keywords.take(1).forEach { add(it) }
+        add(clues.caption)
+        add(clues.screenText.take(3).joinToString(" "))
+        if (found.isEmpty()) {
+            found += ClipNames.tags(clues.copy(author = "")).map { ClipNames.core(it) }.filter { it.length >= 5 }.take(2)
+        }
+        if (found.isEmpty() && !originalSound.containsMatchIn(clues.sound)) add(clues.sound)
+        return found.distinctBy { it.lowercase() }.take(MAX_QUERIES)
+    }
+
+    /** Words with at least one letter; links, hashtags and @names left out. */
+    private fun plainWords(text: String): List<String> =
+        text.replace(linkOrTag, " ")
+            .split(' ', '\n', '\t', '|')
+            .map { word -> word.trim { !it.isLetterOrDigit() } }
+            .filter { word -> word.any { it.isLetter() } }
+
+    /** The results page, videos only ("EgIQAQ==" is YouTube's own filter value, written double-encoded as YouTube does). */
+    fun searchUrl(query: String): String =
+        "https://www.youtube.com/results?search_query=" + query.encodeURLParameter() + "&sp=EgIQAQ%253D%253D"
+
+    fun watchUrl(id: String): String = "https://www.youtube.com/watch?v=$id"
+
+    fun playerUrl(key: String): String = "https://www.youtube.com/youtubei/v1/player?key=$key"
+
+    /** What YouTube's Android app sends to ask for a video's details and caption files. [id] is 11 safe characters. */
+    fun playerBody(id: String): String =
+        "{\"context\":{\"client\":{\"clientName\":\"ANDROID\",\"clientVersion\":\"$ANDROID_CLIENT_VERSION\"}},\"videoId\":\"$id\"}"
+
+    /** Opens the YouTube app at [startMs] when it is installed (a universal link), else YouTube in Safari. */
+    fun openUrl(id: String, startMs: Long): String = "https://www.youtube.com/watch?v=$id&t=${maxOf(0L, startMs / 1000)}s"
+
+    /** Video ids in the order the results page lists them (counted from its ytInitialData when found), each once, at most 8. */
+    fun videoIds(html: String): List<String> {
+        val start = html.indexOf("ytInitialData")
+        val part = if (start >= 0) html.substring(start) else html
+        return idPattern.findAll(part).map { it.groupValues[1] }.distinct().take(MAX_IDS).toList()
+    }
+
+    /** The page's own public key for YouTube's internal API, or "". */
+    fun apiKey(html: String): String = keyPattern.find(html)?.groupValues?.get(1).orEmpty()
+
+    /** The video's name, channel and length, and its caption files, from the player answer; null when it is not JSON. */
+    fun player(json: String, id: String): Pair<ClipVideo, List<ClipCaptionTrack>>? {
+        val root = runCatching { Json.parseToJsonElement(json) }.getOrNull() as? JsonObject ?: return null
+        val details = root["videoDetails"] as? JsonObject
+        val video = ClipVideo(
+            id = id,
+            title = details.text("title"),
+            channel = details.text("author"),
+            seconds = details.text("lengthSeconds").toIntOrNull() ?: 0,
+        )
+        val renderer = (root["captions"] as? JsonObject)?.get("playerCaptionsTracklistRenderer") as? JsonObject
+        val tracks = (renderer?.get("captionTracks") as? JsonArray).orEmpty().mapNotNull { entry ->
+            val track = entry as? JsonObject ?: return@mapNotNull null
+            val url = track.text("baseUrl")
+            if (!url.startsWith("https://")) null else ClipCaptionTrack(url, track.text("languageCode"), track.text("kind") == "asr")
+        }
+        return video to tracks
+    }
+
+    /** English captions written by people first, else YouTube's own; null when there are none in English. */
+    fun pickTrack(tracks: List<ClipCaptionTrack>): ClipCaptionTrack? =
+        tracks.filter { track ->
+            val code = track.language.lowercase()
+            code == "en" || code.startsWith("en-")
+        }.minByOrNull { if (it.auto) 1 else 0 }
+
+    /** YouTube marks caption files that need a token from its own player with "&exp=xpe"; those cannot be read. */
+    fun needsToken(track: ClipCaptionTrack): Boolean = "&exp=xpe" in track.url
+
+    /** The plain XML form of the caption file (without "&fmt=srv3"). */
+    fun captionUrl(track: ClipCaptionTrack): String = track.url.replace("&fmt=srv3", "")
+
+    /** Cues from a caption file: <text start="seconds" dur="seconds">escaped words</text>. Anything else gives none. */
+    fun cues(xml: String): List<SubtitleSyncCue> = textPattern.findAll(xml).mapNotNull { match ->
+        val attributes = match.groupValues[1]
+        val start = startPattern.find(attributes)?.groupValues?.get(1)?.toDoubleOrNull() ?: return@mapNotNull null
+        val duration = durationPattern.find(attributes)?.groupValues?.get(1)?.toDoubleOrNull() ?: 2.0
+        val text = unescape(match.groupValues[2]).replace(tagPattern, " ").trim()
+        if (text.isEmpty()) null else SubtitleSyncCue((start * 1000).roundToLong(), ((start + duration) * 1000).roundToLong(), text)
+    }.toList()
+
+    /** XML escaping, and the HTML escaping YouTube puts inside it ("&amp;#39;" is an apostrophe). */
+    private fun unescape(text: String): String {
+        val once = text.replace("&amp;", "&")
+        val named = once.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
+        val numbers = numbered.replace(named) { match ->
+            val code = match.groupValues[1].toIntOrNull()
+            if (code != null && code in 32..0xFFFF) Char(code).toString() else " "
+        }
+        return numbers.replace("&amp;", "&")
+    }
+
+    /**
+     * The videos whose captions line up with what was heard: the matcher's confident rule, each video on
+     * its own (re-uploads of the same video match equally, so they must not count as each other's
+     * runner-up). At most 3. Among videos with at least 80% of the best hits the longest comes first:
+     * the full video, not a short cut of it.
+     */
+    fun verify(videos: List<ClipVideo>, lines: List<ClipLine>): List<ClipVideoAnswer> {
+        val matched = videos.filter { it.cues.isNotEmpty() }.mapNotNull { video ->
+            ClipMatcher.match(lines, listOf(EpisodeCues(video.id, null, null, video.cues))).firstOrNull()
+                ?.takeIf { it.confident }
+                ?.let { ClipVideoAnswer(video, it) }
+        }
+        val best = matched.maxOfOrNull { it.candidate.hits } ?: return emptyList()
+        return matched.sortedWith(
+            compareByDescending<ClipVideoAnswer> { it.candidate.hits * 5 >= best * 4 }
+                .thenByDescending { it.video.seconds }
+                .thenByDescending { it.candidate.hits },
+        ).take(3)
+    }
+
+    /** For Details: "Made Up Interview: 41 phrases", or "none of 5 videos". */
+    fun matchNote(answers: List<ClipVideoAnswer>, checked: Int): String =
+        if (answers.isEmpty()) {
+            "none of $checked videos with captions"
+        } else {
+            answers.joinToString { "${it.video.title.ifBlank { it.video.id }.take(60)}: ${it.candidate.hits} phrases" }
+        }
+
+    private fun JsonObject?.text(key: String): String = (this?.get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleSyncCue
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+/** Made-up YouTube answers in the shapes youtube-transcript-api 1.2.5 and yt-dlp 2026.10.26 read. No real video. */
+internal object ClipTubeSamples {
+    /** A caption file with one cue every 4 s, each 3 s long (the same timing as [ClipTestText.srt]). */
+    fun captionXml(texts: List<String>): String =
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?><transcript>" +
+            texts.mapIndexed { index, text -> "<text start=\"${index * 4}.0\" dur=\"3.0\">$text</text>" }.joinToString("") +
+            "</transcript>"
+
+    fun captionUrl(id: String, locked: Boolean = false): String =
+        "https://www.youtube.com/api/timedtext?v=$id&lang=en" + (if (locked) "&exp=xpe" else "") + "&fmt=srv3"
+
+    fun playerJson(id: String, title: String, seconds: Int, auto: Boolean = true, locked: Boolean = false, language: String = "en"): String =
+        buildJsonObject {
+            put(
+                "videoDetails",
+                buildJsonObject {
+                    put("videoId", id)
+                    put("title", title)
+                    put("author", "Sample Channel")
+                    put("lengthSeconds", seconds.toString())
+                },
+            )
+            put(
+                "captions",
+                buildJsonObject {
+                    put(
+                        "playerCaptionsTracklistRenderer",
+                        buildJsonObject {
+                            put(
+                                "captionTracks",
+                                buildJsonArray {
+                                    add(
+                                        buildJsonObject {
+                                            put("baseUrl", captionUrl(id, locked))
+                                            put("languageCode", language)
+                                            if (auto) put("kind", "asr")
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                },
+            )
+        }.toString()
+
+    /** A results page: one id before ytInitialData (not a result), the results, and the page key when [key] is not blank. */
+    fun searchPage(ids: List<String>, key: String = "samplekey"): String {
+        val results = ids.joinToString(",") { "{\"videoRenderer\":{\"videoId\":\"$it\",\"title\":{\"runs\":[{\"text\":\"x\"}]}}}" }
+        val config = if (key.isBlank()) "" else "<script>ytcfg.set({\"INNERTUBE_API_KEY\":\"$key\",\"HL\":\"en\"});</script>"
+        return "<html><head><link rel=\"preload\" data-x='{\"videoId\":\"PRELOADxxxx\"}'></head><body>" +
+            "<script>var ytInitialData = {\"contents\":{\"twoColumnSearchResultsRenderer\":{\"primaryContents\":" +
+            "{\"sectionListRenderer\":{\"contents\":[{\"itemSectionRenderer\":{\"contents\":[$results]}}]}}}}};</script>" +
+            config + "</body></html>"
+    }
+}
+
+/** Everything here is made up: ids, titles, captions and words. */
+class ClipYouTubeTest {
+    @Test
+    fun `the results page gives the video ids in order and the page key`() {
+        val page = ClipTubeSamples.searchPage(listOf("FULLvideo01", "SHORTcut001", "FULLvideo01"))
+        assertEquals(listOf("FULLvideo01", "SHORTcut001"), ClipYouTube.videoIds(page))
+        assertEquals("samplekey", ClipYouTube.apiKey(page))
+        assertEquals("", ClipYouTube.apiKey("<html>consent page</html>"))
+        assertEquals(emptyList(), ClipYouTube.videoIds("<html>consent page</html>"))
+    }
+
+    @Test
+    fun `the player answer gives the details and the English captions, people's first`() {
+        val (video, tracks) = ClipYouTube.player(ClipTubeSamples.playerJson("FULLvideo01", "Made Up Interview", 3600), "FULLvideo01")!!
+        assertEquals(ClipVideo("FULLvideo01", "Made Up Interview", "Sample Channel", 3600), video)
+        assertEquals(listOf(ClipCaptionTrack(ClipTubeSamples.captionUrl("FULLvideo01"), "en", true)), tracks)
+        val people = ClipCaptionTrack("https://www.youtube.com/api/timedtext?v=a&lang=en-GB", "en-GB", false)
+        val french = ClipCaptionTrack("https://www.youtube.com/api/timedtext?v=a&lang=fr", "fr", false)
+        assertEquals(people, ClipYouTube.pickTrack(tracks + people + french))
+        assertNull(ClipYouTube.pickTrack(listOf(french)))
+        assertNull(ClipYouTube.player("<html>not json</html>", "x"))
+        assertEquals("https://www.youtube.com/api/timedtext?v=FULLvideo01&lang=en", ClipYouTube.captionUrl(tracks.first()))
+    }
+
+    @Test
+    fun `a caption file that needs YouTube's token is recognised`() {
+        val (_, tracks) = ClipYouTube.player(ClipTubeSamples.playerJson("LOCKEDvid01", "x", 10, locked = true), "LOCKEDvid01")!!
+        assertTrue(ClipYouTube.needsToken(tracks.first()))
+        assertFalse(ClipYouTube.needsToken(ClipCaptionTrack(ClipTubeSamples.captionUrl("a"), "en", true)))
+    }
+
+    @Test
+    fun `caption XML becomes cues, escaping undone and empty cues left out`() {
+        val xml = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><transcript>" +
+            "<text start=\"1.5\" dur=\"2.25\">bako ritu &amp;amp; nesa</text>" +
+            "<text dur=\"1.0\" start=\"4\">it&amp;#39;s <i>dako</i></text>" +
+            "<text start=\"7.1\" dur=\"1\">zibo</text>" +
+            "<text start=\"9\" dur=\"1\"> </text>" +
+            "<text start=\"10\">tail</text></transcript>"
+        assertEquals(
+            listOf(
+                SubtitleSyncCue(1_500, 3_750, "bako ritu & nesa"),
+                SubtitleSyncCue(4_000, 5_000, "it's  dako"),
+                SubtitleSyncCue(7_100, 8_100, "zibo"),
+                SubtitleSyncCue(10_000, 12_000, "tail"),
+            ),
+            ClipYouTube.cues(xml),
+        )
+        assertEquals(emptyList(), ClipYouTube.cues("<html>no captions</html>"))
+    }
+
+    @Test
+    fun `searches come from the keyword, the caption and the text on screen`() {
+        val clues = ClipClues(
+            caption = "The best part of Made Up Interview #madeupinterview @someone https://x.example.test/a",
+            keywords = listOf("made up interview full", "other keyword"),
+            screenText = listOf("SAMPLE GUEST", "ep", "4"),
+        )
+        assertEquals(listOf("made up interview full", "The best part of Made Up Interview", "SAMPLE GUEST ep"), ClipYouTube.queries(clues))
+    }
+
+    @Test
+    fun `hashtags only without words, the sound only without anything else`() {
+        assertEquals(listOf("madeupinterview"), ClipYouTube.queries(ClipClues(caption = "#madeupinterview #fyp")))
+        assertEquals(emptyList(), ClipYouTube.queries(ClipClues(caption = "lol", sound = "original sound - sample.user")))
+        assertEquals(listOf("Lamp Song Some Band"), ClipYouTube.queries(ClipClues(sound = "Lamp Song - Some Band")))
+    }
+
+    @Test
+    fun `addresses to open and to search`() {
+        assertEquals("https://www.youtube.com/watch?v=FULLvideo01&t=125s", ClipYouTube.openUrl("FULLvideo01", 125_900))
+        assertEquals("https://www.youtube.com/watch?v=FULLvideo01&t=0s", ClipYouTube.openUrl("FULLvideo01", -10))
+        assertEquals(
+            "https://www.youtube.com/results?search_query=made%20up%20show&sp=EgIQAQ%253D%253D",
+            ClipYouTube.searchUrl("made up show"),
+        )
+        assertTrue("\"videoId\":\"FULLvideo01\"" in ClipYouTube.playerBody("FULLvideo01"))
+        assertTrue("\"clientName\":\"ANDROID\"" in ClipYouTube.playerBody("FULLvideo01"))
+    }
+
+    @Test
+    fun `the check prefers the full upload and never keeps a video that does not match`() {
+        val texts = ClipTestText.cueTexts(501)
+        fun cuesOf(part: List<String>) = ClipYouTube.cues(ClipTubeSamples.captionXml(part))
+        val full = ClipVideo("FULLvideo01", "Made Up Interview", "Sample Channel", 3_600, cuesOf(texts))
+        val short = ClipVideo("SHORTcut001", "Best bit", "Sample Channel", 60, cuesOf(texts.subList(18, 34)))
+        val other = ClipVideo("OTHERvid001", "Something else", "Other", 900, cuesOf(ClipTestText.cueTexts(777)))
+        val empty = ClipVideo("NOCAPTION01", "No captions", "Other", 900)
+        val lines = ClipTestText.linesFrom(texts, 20..31)
+        val answers = ClipYouTube.verify(listOf(short, other, empty, full), lines)
+        assertEquals(listOf("FULLvideo01", "SHORTcut001"), answers.map { it.video.id })
+        assertTrue(answers.all { it.candidate.confident })
+        assertTrue(abs(answers.first().candidate.startMs - 80_000L) <= 5_000L)
+        assertEquals(emptyList(), ClipYouTube.verify(listOf(other, empty), lines))
+        assertEquals("none of 1 videos with captions", ClipYouTube.matchNote(emptyList(), 1))
+    }
+
+    @Test
+    fun `a YouTube answer is named and described like an episode`() {
+        val candidate = ClipCandidate("FULLvideo01", null, null, 125_000, 190_000, 0.88, 40, true)
+        assertEquals("at 2:05 to 3:10, 88% sure", clipMatchDetail(candidate))
+        assertEquals(
+            "Made Up Interview (Sample Channel)",
+            clipVideoTitle(ClipVideoAnswer(ClipVideo("FULLvideo01", "Made Up Interview", "Sample Channel"), candidate)),
+        )
+        assertEquals("YouTube video", clipVideoTitle(ClipVideoAnswer(ClipVideo("FULLvideo01"), candidate)))
+        assertEquals("Made Up Interview: 40 phrases", ClipYouTube.matchNote(listOf(ClipVideoAnswer(ClipVideo("FULLvideo01", "Made Up Interview"), candidate)), 3))
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinder.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** What a web request gave back: the HTTP status and the text. */
+data class ClipWebReply(val status: Int, val body: String)
+
+/**
+ * Finds YouTube videos that may hold the clip and reads their captions: up to 3 searches with words
+ * from the clues, then the first 6 videos (the best-ranked of each search in turn), 3 at a time.
+ * Whether a video really holds the clip is decided afterwards by [ClipYouTube.verify] with what was
+ * heard, so this can run while the clip is still being listened to. Every step is written to the
+ * Details panel. Never throws, except when cancelled.
+ */
+class ClipYouTubeFinder(
+    private val get: suspend (url: String, headers: Map<String, String>) -> ClipWebReply,
+    private val post: suspend (url: String, body: String, headers: Map<String, String>) -> ClipWebReply,
+) {
+    suspend fun collect(clues: ClipClues, onNote: (label: String, value: String) -> Unit): List<ClipVideo> {
+        val queries = ClipYouTube.queries(clues)
+        if (queries.isEmpty()) {
+            onNote("YouTube", "no words to search with")
+            return emptyList()
+        }
+        var key = ""
+        val searches = mutableListOf<String>()
+        val ranked = mutableListOf<List<String>>()
+        for (query in queries) {
+            val reply = quietly { get(ClipYouTube.searchUrl(query), PAGE_HEADERS) }
+            val ok = reply != null && reply.status in 200..299
+            val ids = if (reply != null && ok) ClipYouTube.videoIds(reply.body) else emptyList()
+            if (key.isEmpty() && reply != null && ok) key = ClipYouTube.apiKey(reply.body)
+            searches += "\"$query\": " + when {
+                reply == null -> "failed"
+                !ok -> "HTTP ${reply.status}"
+                else -> ids.size.toString()
+            }
+            ranked += ids
+        }
+        onNote("YouTube searches", searches.joinToString().take(300))
+        val ids = (0 until MAX_IDS_PER_SEARCH).flatMap { rank -> ranked.mapNotNull { it.getOrNull(rank) } }.distinct().take(MAX_VIDEOS)
+        if (ids.isEmpty()) return emptyList()
+        if (key.isEmpty()) {
+            key = quietly { get(ClipYouTube.watchUrl(ids.first()), PAGE_HEADERS) }?.body?.let { ClipYouTube.apiKey(it) }.orEmpty()
+        }
+        if (key.isEmpty()) {
+            onNote("YouTube captions", "the page key was not found, so no captions could be read")
+            return emptyList()
+        }
+        val read = ids.chunked(IN_FLIGHT).flatMap { group ->
+            coroutineScope { group.map { id -> async { video(id, key) } }.awaitAll() }
+        }
+        onNote("YouTube captions", read.joinToString { it.second }.take(400))
+        return read.map { it.first }
+    }
+
+    /** One video: its details and caption files (as YouTube's Android app asks), then the English captions. */
+    private suspend fun video(id: String, key: String): Pair<ClipVideo, String> {
+        val reply = quietly { post(ClipYouTube.playerUrl(key), ClipYouTube.playerBody(id), API_HEADERS) }
+            ?: return ClipVideo(id) to "$id failed"
+        val (video, tracks) = ClipYouTube.player(reply.body, id) ?: return ClipVideo(id) to "$id unreadable"
+        val track = ClipYouTube.pickTrack(tracks) ?: return video to "$id no English captions"
+        if (ClipYouTube.needsToken(track)) return video to "$id captions need YouTube's token"
+        val text = quietly { get(ClipYouTube.captionUrl(track), API_HEADERS) }?.body.orEmpty()
+        val cues = ClipYouTube.cues(text)
+        return video.copy(cues = cues) to "$id ${cues.size} lines" + if (track.auto) " (auto)" else ""
+    }
+
+    /** Null on a time-out or any failure; cancelling still cancels. */
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        withTimeoutOrNull(REQUEST_MS) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+    companion object {
+        const val MAX_VIDEOS = 6
+        private const val MAX_IDS_PER_SEARCH = 8
+        private const val IN_FLIGHT = 3
+        private const val REQUEST_MS = 10_000L
+        /** "SOCS=CAI" answers YouTube's cookie question the way yt-dlp does, so no consent page comes back. */
+        private val PAGE_HEADERS = mapOf(
+            "User-Agent" to ClipYouTube.DESKTOP_AGENT,
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Cookie" to "SOCS=CAI",
+        )
+        private val API_HEADERS = mapOf("Accept-Language" to "en-US")
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+
+/**
+ * A made-up YouTube: answers by address, every request written down. Searches answer [searchIds]
+ * (with the page key unless [keyOnSearch] is false), players answer [players] by video id, caption
+ * files answer [captions] by address.
+ */
+internal class FakeTube(
+    val searchIds: List<String> = emptyList(),
+    val keyOnSearch: Boolean = true,
+    val searchStatus: Int = 200,
+    val players: Map<String, String> = emptyMap(),
+    val captions: Map<String, String> = emptyMap(),
+) {
+    val asked = mutableListOf<String>()
+    val headers = mutableListOf<Map<String, String>>()
+    val bodies = mutableListOf<String>()
+
+    suspend fun get(url: String, sent: Map<String, String>): ClipWebReply {
+        asked += url
+        headers += sent
+        return when {
+            url.startsWith("https://www.youtube.com/results") ->
+                ClipWebReply(searchStatus, ClipTubeSamples.searchPage(searchIds, if (keyOnSearch) "samplekey" else ""))
+            url.startsWith("https://www.youtube.com/watch") -> ClipWebReply(200, "<html>a watch page without a key</html>")
+            else -> captions[url]?.let { ClipWebReply(200, it) } ?: ClipWebReply(404, "")
+        }
+    }
+
+    suspend fun post(url: String, body: String, sent: Map<String, String>): ClipWebReply {
+        asked += url
+        bodies += body
+        val id = players.keys.firstOrNull { "\"$it\"" in body } ?: throw IllegalStateException("HTTP 400")
+        return ClipWebReply(200, players.getValue(id))
+    }
+
+    fun finder() = ClipYouTubeFinder({ url, sent -> get(url, sent) }, { url, body, sent -> post(url, body, sent) })
+}
+
+/** Everything here is made up: ids, titles, captions and words. */
+class ClipYouTubeFinderTest {
+    private val clues = ClipClues(caption = "Made up interview with a sample guest")
+
+    @Test
+    fun `searches, reads each video's captions and says why some could not be read`() = runTest {
+        val tube = FakeTube(
+            searchIds = listOf("AAAAAAAAAA1", "BBBBBBBBBB2", "CCCCCCCCCC3"),
+            players = mapOf(
+                "AAAAAAAAAA1" to ClipTubeSamples.playerJson("AAAAAAAAAA1", "Made Up Interview", 3_600),
+                "BBBBBBBBBB2" to ClipTubeSamples.playerJson("BBBBBBBBBB2", "Locked", 600, locked = true),
+                "CCCCCCCCCC3" to ClipTubeSamples.playerJson("CCCCCCCCCC3", "French", 600, language = "fr"),
+            ),
+            captions = mapOf(
+                "https://www.youtube.com/api/timedtext?v=AAAAAAAAAA1&lang=en" to ClipTubeSamples.captionXml(listOf("bako ritu", "nesa dako")),
+            ),
+        )
+        val notes = mutableListOf<Pair<String, String>>()
+        val videos = tube.finder().collect(clues) { label, value -> notes += label to value }
+        assertEquals(listOf("AAAAAAAAAA1", "BBBBBBBBBB2", "CCCCCCCCCC3"), videos.map { it.id })
+        assertEquals(2, videos.first().cues.size)
+        assertEquals("Made Up Interview", videos.first().title)
+        assertEquals(3_600, videos.first().seconds)
+        assertEquals(
+            listOf(
+                "YouTube searches" to "\"Made up interview with a sample guest\": 3",
+                "YouTube captions" to "AAAAAAAAAA1 2 lines (auto), BBBBBBBBBB2 captions need YouTube's token, CCCCCCCCCC3 no English captions",
+            ),
+            notes,
+        )
+        assertEquals("SOCS=CAI", tube.headers.first()["Cookie"])
+        assertEquals(ClipYouTube.DESKTOP_AGENT, tube.headers.first()["User-Agent"])
+        assertTrue(tube.asked.contains(ClipYouTube.playerUrl("samplekey")))
+        assertEquals(ClipYouTube.playerBody("AAAAAAAAAA1"), tube.bodies.first { "AAAAAAAAAA1" in it })
+    }
+
+    @Test
+    fun `no words to search with asks nothing`() = runTest {
+        val tube = FakeTube(searchIds = listOf("AAAAAAAAAA1"))
+        val notes = mutableListOf<Pair<String, String>>()
+        val videos = tube.finder().collect(ClipClues(caption = "lol")) { label, value -> notes += label to value }
+        assertEquals(emptyList(), videos)
+        assertEquals(listOf("YouTube" to "no words to search with"), notes)
+        assertEquals(emptyList(), tube.asked)
+    }
+
+    @Test
+    fun `without the page key no captions are read, and a refused search is noted`() = runTest {
+        val tube = FakeTube(searchIds = listOf("AAAAAAAAAA1"), keyOnSearch = false)
+        val notes = mutableListOf<Pair<String, String>>()
+        val videos = tube.finder().collect(clues) { label, value -> notes += label to value }
+        assertEquals(emptyList(), videos)
+        assertEquals(ClipYouTube.watchUrl("AAAAAAAAAA1"), tube.asked.last())
+        assertEquals("the page key was not found, so no captions could be read", notes.last().second)
+
+        val refused = FakeTube(searchIds = listOf("AAAAAAAAAA1"), searchStatus = 429)
+        val refusedNotes = mutableListOf<Pair<String, String>>()
+        assertEquals(emptyList(), refused.finder().collect(clues) { label, value -> refusedNotes += label to value })
+        assertEquals(listOf("YouTube searches" to "\"Made up interview with a sample guest\": HTTP 429"), refusedNotes)
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipInstagram.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Instagram without a login. A logged-out reel page often has no video address (phone test, 2026-11-16:
+ * "Video address found: no"), so the other pages of the same post are tried. Where each key comes from,
+ * and how sure we are that Instagram still sends it:
+ * - og:description "585K likes, 550 comments - handle on December 15, 2025: "caption"": seen on the phone. Sure.
+ * - The /p/<code>/ page's JSON scripts with "xig_polaris_media" ... "video_versions": [{"url"}]: what yt-dlp
+ *   2026.10.26 reads for logged-out posts (its source was read on 2026-11-16). Medium.
+ * - The embed page /p/<code>/embed/captioned/ with "video_url" inside "shortcode_media" (plain JSON, or escaped
+ *   inside "contextJSON"), or a <video src>: what older yt-dlp versions read. Low to medium.
+ * - og:video: rarely sent to logged-out visitors today. Low.
+ * A blob: address is never used (it only lives inside the page). Pure functions, plus [findVideo],
+ * which gets the network passed in.
+ */
+object ClipInstagram {
+    const val PHONE_AGENT =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+    private const val HTTP_MS = 10_000L
+    private const val MAX_URLS = 6
+    /** A regular expression for any number of backslashes: the same key appears at several levels of JSON escaping. */
+    private const val SLASHES = "\\\\*"
+    private val link = Regex("instagram\\.com/(?:[A-Za-z0-9_.]+/)?(?:reels?|p|tv)/([A-Za-z0-9_-]{5,})", RegexOption.IGNORE_CASE)
+    private val described =
+        Regex("^\\s*(?:[\\d.,]+\\s*[KMBkmb]?\\s+(?:likes?|comments?),?\\s*)+-\\s+([A-Za-z0-9._]+)\\s+on\\s+([^:]{3,40}):\\s*([\\s\\S]*)$")
+    private val videoKey = Regex("video_url$SLASHES\"\\s*:\\s*$SLASHES\"(https?:[^\"]*?)$SLASHES\"")
+    private val versionsStart = Regex("video_versions$SLASHES\"\\s*:\\s*\\[")
+    private val versionUrl = Regex("url$SLASHES\"\\s*:\\s*$SLASHES\"(https?:[^\"]*?)$SLASHES\"")
+    private val videoTag = Regex("<video[^>]*\\ssrc=\"(https://[^\"]+)\"", RegexOption.IGNORE_CASE)
+    private val ogVideo = Regex("<meta[^>]+property=\"og:video(?::secure_url)?\"[^>]+content=\"(https://[^\"]+)\"", RegexOption.IGNORE_CASE)
+
+    /** The post's code in an Instagram link ("/reel/ABC123/", "/p/ABC123/", "/tv/ABC123/"), or "". */
+    fun shortcode(url: String): String = link.find(url)?.groupValues?.get(1).orEmpty()
+
+    fun postUrl(code: String): String = "https://www.instagram.com/p/$code/"
+
+    fun embedUrl(code: String): String = "https://www.instagram.com/p/$code/embed/captioned/"
+
+    /**
+     * Instagram's og:description "N likes, N comments - handle on date: "caption"" -> the caption without
+     * the counts and the quote marks, and the handle. Null for any other text.
+     */
+    fun description(text: String): Pair<String, String>? {
+        val match = described.find(text) ?: return null
+        var caption = match.groupValues[3].trim()
+        if (caption.startsWith("\"") || caption.startsWith("“")) caption = caption.drop(1)
+        if (caption.endsWith("\".") || caption.endsWith("”.")) caption = caption.dropLast(1)
+        if (caption.endsWith("\"") || caption.endsWith("”")) caption = caption.dropLast(1)
+        return caption.trim() to match.groupValues[1]
+    }
+
+    /** Video addresses written anywhere in a page or script text, at any level of JSON escaping. At most 6. */
+    fun videoUrls(text: String): List<String> {
+        val found = mutableListOf<String>()
+        videoKey.findAll(text).forEach { found += it.groupValues[1] }
+        for (start in versionsStart.findAll(text)) {
+            val from = start.range.last + 1
+            val close = text.indexOf(']', from)
+            val to = minOf(if (close < 0) text.length else close, from + 4_000)
+            versionUrl.find(text.substring(from, to))?.let { found += it.groupValues[1] }
+        }
+        videoTag.findAll(text).forEach { found += it.groupValues[1] }
+        ogVideo.findAll(text).forEach { found += it.groupValues[1] }
+        return found.map { unescape(it) }.filter { it.startsWith("https://") }.distinct().take(MAX_URLS)
+    }
+
+    fun hasVideoKey(text: String): Boolean = "video_url" in text || "video_versions" in text
+
+    /** For Details: "812 KB, video key no". */
+    fun describe(text: String): String = "${size(text)}, video key ${yesNo(hasVideoKey(text))}"
+
+    /**
+     * Tries the other pages of post [code] until one gives a video address: the embed page as a plain
+     * download (cheap, about a second), then the /p/ page and the embed page in the off-screen web view
+     * ([readPage] gives the page reader's JSON, or null). [tried] gets one line for Details, starting with
+     * [first] (what the shared page gave), saying what each page returned.
+     */
+    suspend fun findVideo(
+        code: String,
+        webGet: suspend (String, Map<String, String>) -> ClipWebReply,
+        readPage: suspend (String) -> String?,
+        first: String,
+        tried: (String) -> Unit,
+    ): ClipPage? {
+        val log = mutableListOf(first)
+        var found: ClipPage? = null
+        val reply = quietly { webGet(embedUrl(code), mapOf("User-Agent" to PHONE_AGENT, "Accept-Language" to "en-US,en;q=0.9")) }
+        log += "embed download: " + if (reply == null) "failed" else "HTTP ${reply.status}, ${describe(reply.body)}"
+        val direct = if (reply != null && reply.status in 200..299) videoUrls(reply.body) else emptyList()
+        if (direct.isNotEmpty()) found = ClipPage(pageUrl = embedUrl(code), videoUrls = direct)
+        for ((name, url) in listOf("post page" to postUrl(code), "embed page" to embedUrl(code))) {
+            if (found != null) break
+            val json = readPage(url)
+            val page = json?.let { ClipPageParser.parse(it) }
+            log += "$name: " + if (json == null || page == null) "did not load" else "${describe(json)}, addresses found: ${page.videoUrls.size}"
+            if (page != null && page.videoUrls.isNotEmpty()) found = page
+        }
+        tried(log.joinToString("; "))
+        return found
+    }
+
+    /** Undoes JSON escaping as many times as it was done ("https:\\/\\/" -> "https://"), then "&amp;". */
+    internal fun unescape(text: String): String {
+        var current = text
+        repeat(4) {
+            if ('\\' !in current) return current.replace("&amp;", "&")
+            current = jsonLevel(current)
+        }
+        return current.replace("&amp;", "&")
+    }
+
+    private fun jsonLevel(text: String): String = buildString {
+        var index = 0
+        while (index < text.length) {
+            val char = text[index]
+            if (char != '\\' || index + 1 >= text.length) {
+                append(char)
+                index++
+                continue
+            }
+            val next = text[index + 1]
+            val code = if (next == 'u' && index + 5 < text.length) text.substring(index + 2, index + 6).toIntOrNull(16) else null
+            if (code != null) {
+                append(Char(code))
+                index += 6
+            } else {
+                append(if (next == 'n') '\n' else if (next == 't') '\t' else next)
+                index += 2
+            }
+        }
+    }
+
+    private fun size(text: String): String = "${text.length / 1024} KB"
+
+    private fun yesNo(value: Boolean): String = if (value) "yes" else "no"
+
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        withTimeoutOrNull(HTTP_MS) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipInstagramTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+/** Made-up Instagram pages in the shapes yt-dlp reads (and the phone showed for the description). No real post. */
+class ClipInstagramTest {
+    private val described = "585K likes, 550 comments - sample.user on December 15, 2025: \"Made Up Show S2E5 the lamp scene #madeupshow\". "
+
+    private fun pageJson(description: String = "", raw: List<String> = emptyList()): String = buildJsonObject {
+        put("url", "https://www.instagram.com/p/DAbc123xyz/")
+        put("title", "Instagram")
+        put("metas", buildJsonObject { if (description.isNotEmpty()) put("og:description", description) })
+        put("videos", buildJsonArray {})
+        put("scripts", buildJsonArray {})
+        put("raw", buildJsonArray { raw.forEach { add(it) } })
+    }.toString()
+
+    @Test
+    fun `the post code is read from every kind of Instagram link`() {
+        assertEquals("DAbc123xyz", ClipInstagram.shortcode("https://www.instagram.com/reel/DAbc123xyz/?igsh=c2FtcGxl"))
+        assertEquals("DAbc123xyz", ClipInstagram.shortcode("https://www.instagram.com/sample.user/reel/DAbc123xyz/"))
+        assertEquals("DAbc123xyz", ClipInstagram.shortcode("https://www.instagram.com/reels/DAbc123xyz/"))
+        assertEquals("Cx_9-ab12", ClipInstagram.shortcode("https://instagram.com/p/Cx_9-ab12/"))
+        assertEquals("DAbc123xyz", ClipInstagram.shortcode("https://www.instagram.com/tv/DAbc123xyz"))
+        assertEquals("", ClipInstagram.shortcode("https://www.instagram.com/sample.user/"))
+        assertEquals("", ClipInstagram.shortcode("https://clips.example.test/@a/video/1"))
+        assertEquals("https://www.instagram.com/p/DAbc123xyz/embed/captioned/", ClipInstagram.embedUrl("DAbc123xyz"))
+    }
+
+    @Test
+    fun `the description gives the caption without counts and quote marks, and the handle`() {
+        assertEquals("Made Up Show S2E5 the lamp scene #madeupshow" to "sample.user", ClipInstagram.description(described))
+        assertEquals(
+            "Second line\nand more" to "made_up.clips",
+            ClipInstagram.description("1,204 likes, 31 comments - made_up.clips on May 2, 2026: “Second line\nand more”"),
+        )
+        assertEquals("plain caption" to "sample_user", ClipInstagram.description("12 likes - sample_user on May 2, 2026: plain caption"))
+        assertNull(ClipInstagram.description("Just a caption with 3 likes - nope"))
+        assertNull(ClipInstagram.description(""))
+    }
+
+    @Test
+    fun `video addresses are found at any level of escaping, blob and http never`() {
+        assertEquals(
+            listOf("https://cdn.example.test/v1.mp4?a=1&b=2"),
+            ClipInstagram.videoUrls(
+                """window.__additionalDataLoaded('/p/DAbc123xyz/',{"graphql":{"shortcode_media":{"is_video":true,"video_url":"https://cdn.example.test/v1.mp4?a=1&b=2"}}});""",
+            ),
+        )
+        assertEquals(
+            listOf("https://cdn.example.test/v2.mp4"),
+            ClipInstagram.videoUrls("""{"contextJSON":"{\"context\":{\"media\":{\"video_url\":\"https:\\/\\/cdn.example.test\\/v2.mp4\"}}}"}"""),
+        )
+        assertEquals(
+            listOf("https://cdn.example.test/v3.mp4"),
+            ClipInstagram.videoUrls("""{"video_versions":[],"x":1,"video_versions":[{"type":101,"url":"https:\/\/cdn.example.test\/v3.mp4","width":720}]}"""),
+        )
+        assertEquals(
+            listOf("https://cdn.example.test/v4.mp4", "https://cdn.example.test/v5.mp4"),
+            ClipInstagram.videoUrls(
+                """<video class="x" src="blob:https://www.instagram.com/abc"></video><video playsinline src="https://cdn.example.test/v4.mp4"></video><meta property="og:video" content="https://cdn.example.test/v5.mp4">""",
+            ),
+        )
+        assertEquals(
+            emptyList(),
+            ClipInstagram.videoUrls("""{"video_url":"http://cdn.example.test/old.mp4","video_url":"blob:https://www.instagram.com/x"}"""),
+        )
+    }
+
+    @Test
+    fun `the embed download is tried first, then the post page in the web view`() = runTest {
+        val read = mutableListOf<String>()
+        val page = ClipInstagram.findVideo(
+            code = "DAbc123xyz",
+            webGet = { _, _ -> ClipWebReply(200, "<html>no video here</html>") },
+            readPage = { url ->
+                read += url
+                pageJson(raw = listOf("""requireLazy(["x"],function(){ return {"items":[{"video_versions":[{"url":"https:\/\/cdn.example.test\/v6.mp4"}]}]} })"""))
+            },
+            first = "page: 1 KB, video key no",
+        ) { line -> read += line }
+        assertEquals(listOf("https://cdn.example.test/v6.mp4"), page?.videoUrls)
+        assertEquals(
+            listOf(
+                "https://www.instagram.com/p/DAbc123xyz/",
+                "page: 1 KB, video key no; embed download: HTTP 200, 0 KB, video key no; post page: 0 KB, video key yes, addresses found: 1",
+            ),
+            read,
+        )
+    }
+
+    @Test
+    fun `nothing found anywhere says so for each page`() = runTest {
+        var line = ""
+        val page = ClipInstagram.findVideo("DAbc123xyz", { _, _ -> throw IllegalStateException("offline") }, { null }, "page: 0 KB, video key no") { line = it }
+        assertNull(page)
+        assertEquals("page: 0 KB, video key no; embed download: failed; post page: did not load; embed page: did not load", line)
+    }
+
+    @Test
+    fun `the page parser reads raw scripts and Instagram's description`() {
+        val walked = ClipPageParser.parse(
+            pageJson(
+                raw = listOf(
+                    """{"xig":{"items":[{"video_versions":[{"url":"https://cdn.example.test/v7.mp4"}],"caption":{"text":"Made Up Show lamp"},"user":{"username":"sample.user"}}]}}""",
+                ),
+            ),
+        )
+        assertEquals(listOf("https://cdn.example.test/v7.mp4"), walked.videoUrls)
+        assertEquals("Made Up Show lamp", walked.caption)
+        assertEquals("sample.user", walked.author)
+        val fromMeta = ClipPageParser.parse(pageJson(description = described))
+        assertEquals("Made Up Show S2E5 the lamp scene #madeupshow", fromMeta.caption)
+        assertEquals("sample.user", fromMeta.author)
+        assertEquals(emptyList(), fromMeta.videoUrls)
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPageParser.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
+/** What a clip's web page says about itself. Every field may be empty. */
+data class ClipPage(
+    val pageUrl: String = "",
+    val caption: String = "",
+    val author: String = "",
+    val videoUrls: List<String> = emptyList(),
+    /** The sound's title and maker ("original sound - Made Up Show - Sample"). */
+    val sound: String = "",
+    /** Search words the site attached to the clip. */
+    val keywords: List<String> = emptyList(),
+    /** Hashtags the site lists for the clip, without "#". */
+    val hashtags: List<String> = emptyList(),
+)
+
+/**
+ * Reads the JSON text made by the page script in ClipPageReader.swift:
+ * {"url", "title", "metas": {name: content}, "videos": [addresses of video elements],
+ * "scripts": [text of each JSON script tag], "raw": [any script that names "video_url" or "video_versions"]}
+ * ("raw" is missing when the page reader is older). Besides the caption it keeps other words that may
+ * name the show: the sound's title, the site's keywords and its hashtag list. The sites change their pages often, so nothing here
+ * depends on one exact shape: every JSON script is searched for an object that looks like a clip
+ * and for the keys that hold video addresses; a raw script that is not JSON is searched as text
+ * ([ClipInstagram.videoUrls]). Instagram's "N likes, N comments - handle on date: "caption"" description
+ * gives the caption and the handle. Never throws; unknown input gives an empty page.
+ */
+object ClipPageParser {
+    private const val MAX_NODES = 300_000
+    private const val MAX_DEPTH = 60
+    private const val MAX_URLS = 6
+    private const val MAX_WORDS = 12
+    private val keywordKeys = setOf("suggestedWords", "keywords", "keywordTags")
+    private val urlKeys = setOf(
+        "playAddr", "PlayAddr", "play_addr", "downloadAddr", "DownloadAddr", "download_addr",
+        "video_url", "video_versions", "contentUrl",
+    )
+    private val captionMetas = listOf("og:description", "twitter:description", "description", "og:title")
+    private val videoMetas = listOf("og:video:secure_url", "og:video", "og:video:url", "twitter:player:stream")
+
+    private class Found {
+        var caption = ""
+        var author = ""
+        val urls = mutableListOf<String>()
+        var sound = ""
+        val keywords = mutableListOf<String>()
+        val hashtags = mutableListOf<String>()
+        var nodes = 0
+    }
+
+    fun parse(pageJson: String): ClipPage = runCatching { parseOrThrow(pageJson) }.getOrDefault(ClipPage())
+
+    private fun parseOrThrow(pageJson: String): ClipPage {
+        val root = Json.parseToJsonElement(pageJson) as? JsonObject ?: return ClipPage()
+        val metas = root["metas"] as? JsonObject
+        val found = Found()
+        for (script in (root["scripts"] as? JsonArray).orEmpty()) {
+            val text = (script as? JsonPrimitive)?.contentOrNull ?: continue
+            val element = runCatching { Json.parseToJsonElement(text) }.getOrNull() ?: continue
+            walk(element, found, 0)
+        }
+        found.nodes = 0
+        for (script in (root["raw"] as? JsonArray).orEmpty()) {
+            val text = (script as? JsonPrimitive)?.contentOrNull ?: continue
+            val element = runCatching { Json.parseToJsonElement(text) }.getOrNull()
+            if (element != null) walk(element, found, 0) else found.urls += ClipInstagram.videoUrls(text)
+        }
+        val elementUrls = (root["videos"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        val metaUrls = videoMetas.mapNotNull { metas?.text(it)?.takeIf(String::isNotBlank) }
+        val urls = (elementUrls + found.urls + metaUrls)
+            .map { it.trim() }
+            .filter { it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true) }
+            .distinct()
+            .take(MAX_URLS)
+        val metaCaption = captionMetas.firstNotNullOfOrNull { metas?.text(it)?.takeIf(String::isNotBlank) } ?: root.text("title")
+        val described = ClipInstagram.description(metaCaption)
+        val caption = found.caption.ifBlank { described?.first ?: metaCaption }
+        return ClipPage(
+            pageUrl = root.text("url"),
+            caption = caption.trim().take(2_000),
+            author = found.author.ifBlank { described?.second.orEmpty() }.trim().take(100),
+            videoUrls = urls,
+            sound = found.sound.trim().take(200),
+            keywords = found.keywords.toList(),
+            hashtags = found.hashtags.toList(),
+        )
+    }
+
+    private fun walk(element: JsonElement, found: Found, depth: Int) {
+        found.nodes++
+        if (depth > MAX_DEPTH || found.nodes > MAX_NODES) return
+        when (element) {
+            is JsonObject -> {
+                readClip(element, found)
+                for ((key, value) in element) {
+                    if (key in urlKeys) collectUrls(value, found.urls, 0)
+                    if (key in keywordKeys) collectWords(value, found.keywords, 0)
+                    walk(value, found, depth + 1)
+                }
+            }
+            is JsonArray -> for (child in element) walk(child, found, depth + 1)
+            else -> Unit
+        }
+    }
+
+    /**
+     * TikTok: {"desc": "...", "video": {...}, "author": {"uniqueId": "..."} or "name"}.
+     * Instagram: {"caption": {"text": "..."}, "video_versions": [...], "user": {"username": "..."}}.
+     * The first clip with a caption wins.
+     */
+    private fun readClip(obj: JsonObject, found: Found) {
+        if (found.caption.isNotBlank()) return
+        val tiktok = obj["video"] is JsonObject && obj["desc"] is JsonPrimitive
+        val instagram = "video_versions" in obj || "video_url" in obj
+        if (!tiktok && !instagram) return
+        val caption = if (tiktok) obj.text("desc") else (obj["caption"] as? JsonObject)?.text("text") ?: obj.text("caption")
+        val owner = if (tiktok) obj["author"] else obj["user"] ?: obj["owner"]
+        val author = when (owner) {
+            is JsonObject -> owner.text("uniqueId").ifBlank { owner.text("username") }.ifBlank { owner.text("nickname") }
+            is JsonPrimitive -> owner.contentOrNull.orEmpty()
+            else -> ""
+        }
+        if (caption.isNotBlank()) found.caption = caption
+        if (found.author.isBlank()) found.author = author
+        readExtras(obj, found)
+    }
+
+    /**
+     * More words about the clip. TikTok: {"music": {"title", "authorName"}, "textExtra": [{"hashtagName"}],
+     * "challenges": [{"title"}]}. Instagram: {"clips_metadata": {"original_sound_info": {"original_audio_title"},
+     * "music_info": {"music_asset_info": {"title", "display_artist"}}}}.
+     */
+    private fun readExtras(obj: JsonObject, found: Found) {
+        if (found.sound.isBlank()) {
+            val music = obj["music"] as? JsonObject
+            val reel = obj["clips_metadata"] as? JsonObject
+            val original = reel?.get("original_sound_info") as? JsonObject
+            val asset = (reel?.get("music_info") as? JsonObject)?.get("music_asset_info") as? JsonObject
+            found.sound = listOf(
+                music?.text("title"), music?.text("authorName"), original?.text("original_audio_title"),
+                asset?.text("title"), asset?.text("display_artist"),
+            ).filter { !it.isNullOrBlank() }.joinToString(" - ")
+        }
+        for (entry in (obj["textExtra"] as? JsonArray).orEmpty() + (obj["challenges"] as? JsonArray).orEmpty()) {
+            val tag = (entry as? JsonObject)?.let { it.text("hashtagName").ifBlank { it.text("title") } }.orEmpty().trim()
+            if (tag.isNotEmpty() && tag !in found.hashtags && found.hashtags.size < MAX_WORDS) found.hashtags += tag
+        }
+    }
+
+    private fun collectWords(value: JsonElement, into: MutableList<String>, depth: Int) {
+        if (depth > 2 || into.size >= MAX_WORDS) return
+        when (value) {
+            is JsonPrimitive -> {
+                val text = value.contentOrNull?.trim().orEmpty()
+                if (value.isString && text.length in 3..60 && text !in into) into += text
+            }
+            is JsonArray -> for (child in value) collectWords(child, into, depth + 1)
+            is JsonObject -> for (child in value.values) collectWords(child, into, depth + 1)
+        }
+    }
+
+    private fun collectUrls(value: JsonElement, into: MutableList<String>, depth: Int) {
+        if (depth > 3 || into.size >= 12) return
+        when (value) {
+            is JsonPrimitive -> {
+                val text = value.contentOrNull ?: return
+                if (value.isString && text.startsWith("http") && text !in into) into += text
+            }
+            is JsonArray -> for (child in value) collectUrls(child, into, depth + 1)
+            is JsonObject -> for (child in value.values) collectUrls(child, into, depth + 1)
+        }
+    }
+
+    private fun JsonObject.text(key: String): String = (this[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipTimings.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+/**
+ * Seconds per stage for the Details panel ("Timings: page 6.1 s, download 3.2 s, ..., total 58.3 s"),
+ * so the next screenshot shows where the time goes. [now] is a clock in milliseconds.
+ */
+class ClipTimings(private val now: () -> Long) {
+    private val started = now()
+    private var last = started
+    private val parts = mutableListOf<String>()
+
+    /** Ends the stage that ran since the last lap (or the start) and names it. */
+    fun lap(stage: String, extra: String = "") {
+        val time = now()
+        parts += entry(stage, time - last, extra)
+        last = time
+    }
+
+    /** Work that ran beside the stages, such as YouTube while listening. It does not move the lap clock. */
+    fun beside(stage: String, ms: Long, extra: String = "") {
+        parts += entry(stage, ms, extra) + " beside"
+    }
+
+    fun line(): String = (parts + "total ${seconds(now() - started)}").joinToString(", ")
+
+    companion object {
+        /** "6.1 s": tenths, cut not rounded, never below zero. */
+        fun seconds(ms: Long): String {
+            val time = maxOf(0L, ms)
+            return "${time / 1000}.${time % 1000 / 100} s"
+        }
+
+        private fun entry(stage: String, ms: Long, extra: String): String =
+            "$stage ${seconds(ms)}" + if (extra.isBlank()) "" else " ($extra)"
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipTimingsTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class ClipTimingsTest {
+    @Test
+    fun `stages, work beside them and the total`() {
+        var clock = 0L
+        val timings = ClipTimings { clock }
+        clock = 6_100
+        timings.lap("page")
+        clock = 9_300
+        timings.lap("download")
+        timings.beside("YouTube", 9_400, "6 videos")
+        clock = 30_700
+        timings.lap("listen", "part 3 of 3")
+        assertEquals(
+            "page 6.1 s, download 3.2 s, YouTube 9.4 s (6 videos) beside, listen 21.4 s (part 3 of 3), total 30.7 s",
+            timings.line(),
+        )
+    }
+
+    @Test
+    fun `seconds are cut to tenths and never negative`() {
+        assertEquals("0.0 s", ClipTimings.seconds(-5))
+        assertEquals("0.0 s", ClipTimings.seconds(59))
+        assertEquals("1.9 s", ClipTimings.seconds(1_999))
+        assertEquals("125.0 s", ClipTimings.seconds(125_000))
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipEpisodeRank.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+/**
+ * A cheap first pass before downloading subtitles: episodes whose title or summary holds rare words
+ * that were heard (a guest's name, "zibotu lamp") are searched earlier. Only the order changes; the
+ * subtitle match still decides. A word in more than a fifth of the summaries (a main character's
+ * name) says nothing about one episode and is ignored. The hinted episode stays first; episodes
+ * already fetched while listening come next, because checking them costs nothing.
+ */
+object ClipEpisodeRank {
+    private const val MIN_LETTERS = 4
+    private const val MAX_SHARE = 0.2
+
+    /** [ordered] is the list from [orderEpisodes]; [cached] the video ids whose subtitles are already in the cache. */
+    fun rank(ordered: List<ClipEpisode>, hint: ClipHint, lines: List<ClipLine>, cached: Set<String> = emptySet()): List<ClipEpisode> {
+        val heard = lines.flatMap { ClipText.normalize(it.text) }
+            .filter { word -> word.length >= MIN_LETTERS && word.none { it.isDigit() } }
+            .toSet()
+        val texts = ordered.map { ClipText.normalize("${it.title.orEmpty()}\n${it.overview.orEmpty()}").toSet() }
+        val counts = mutableMapOf<String, Int>()
+        for (words in texts) for (word in words) if (word in heard) counts[word] = (counts[word] ?: 0) + 1
+        val limit = maxOf(1.0, ordered.size * MAX_SHARE)
+        val scores = texts.map { words ->
+            words.sumOf { word ->
+                val count = counts[word] ?: 0
+                if (count == 0 || count > limit) 0.0 else 1.0 / count
+            }
+        }
+        fun hinted(episode: ClipEpisode) =
+            hint.season != null && hint.episode != null && episode.season == hint.season && episode.episode == hint.episode
+        fun inSeason(episode: ClipEpisode) = hint.season != null && episode.season == hint.season
+        return ordered.indices.sortedWith(
+            compareBy<Int>(
+                { if (hinted(ordered[it])) 0 else 1 },
+                { if (ordered[it].videoId in cached) 0 else 1 },
+                { if (inSeason(ordered[it])) 0 else 1 },
+                { -scores[it] },
+                { it },
+            ),
+        ).map { ordered[it] }
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipEpisodeRankTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/** Made-up episode summaries and heard words. */
+class ClipEpisodeRankTest {
+    private fun episode(season: Int, number: Int, overview: String) =
+        ClipEpisode("e$season-$number", "e$season-$number", "series", season, number, title = "Episode $number", overview = overview)
+
+    private val season1 = listOf(
+        episode(1, 1, "Kora meets the neighbours."),
+        episode(1, 2, "Kora and the lamp."),
+        episode(1, 3, "Zibotu visits; the lamp breaks."),
+        episode(1, 4, "Nesa returns. Kora alone."),
+        episode(1, 5, "Nothing heard here."),
+    )
+
+    private fun ids(list: List<ClipEpisode>) = list.map { it.videoId }
+
+    @Test
+    fun `a rare heard word in a summary moves its episode up, a common one does nothing`() {
+        val lines = listOf(ClipLine("zibotu brought the lamp back, kora", 0, 3_000))
+        assertEquals(listOf("e1-3", "e1-1", "e1-2", "e1-4", "e1-5"), ids(ClipEpisodeRank.rank(season1, ClipHint(), lines)))
+        assertEquals(ids(season1), ids(ClipEpisodeRank.rank(season1, ClipHint(), emptyList())))
+    }
+
+    @Test
+    fun `the hinted episode stays first and episodes already fetched come next`() {
+        val list = season1.take(4) + episode(2, 1, "A new start.")
+        val lines = listOf(ClipLine("nesa is here", 0, 3_000))
+        assertEquals(
+            listOf("e2-1", "e1-2", "e1-4", "e1-1", "e1-3"),
+            ids(ClipEpisodeRank.rank(list, ClipHint(season = 2, episode = 1), lines, cached = setOf("e1-2"))),
+        )
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetch.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+
+/**
+ * Work done while the clip is still being listened to (listening is slow and needs no network). When
+ * the page alone names a show strongly (score 90 or more: an exact hashtag, a keyword of the page, this
+ * poster's last show), its episode list and the subtitles of its first 36 episodes (hinted episode and
+ * season first) are fetched into the cache, 6 at a time. The search after listening then reads them
+ * from the cache. The pipeline cancels this as soon as listening ends; what was fetched stays cached.
+ */
+class ClipPrefetch(
+    private val finder: ClipShowFinder,
+    private val loadEpisodes: suspend (ShowGuess) -> List<ClipEpisode>,
+    private val subtitles: EpisodeSubtitleSource,
+) {
+    /** The show it worked on (set once its episode list is loaded), or null. */
+    var show: ShowGuess? = null
+        private set
+
+    /** That show's episodes as loaded, not ordered. */
+    var episodes: List<ClipEpisode> = emptyList()
+        private set
+
+    /** Video ids whose subtitles are now in the cache. */
+    val fetched = mutableSetOf<String>()
+
+    suspend fun run(clues: ClipClues) {
+        val top = finder.find(clues, emptyList()).firstOrNull() ?: return
+        if (top.score < STRONG) return
+        val loaded = loadEpisodes(top.show)
+        if (loaded.isEmpty()) return
+        episodes = loaded
+        show = top.show
+        val ordered = orderEpisodes(loaded, ClipNames.hint(clues, emptyList())).take(MAX_EPISODES)
+        for (batch in ordered.chunked(IN_FLIGHT)) {
+            val done = coroutineScope {
+                batch.map { episode ->
+                    async { episode.videoId.takeIf { subtitles.cues(top.show.metaId, episode) != null } }
+                }.awaitAll()
+            }
+            fetched += done.filterNotNull()
+        }
+    }
+
+    companion object {
+        const val STRONG = 90
+        const val MAX_EPISODES = 36
+        private const val IN_FLIGHT = 6
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** How the show search ended: answers best first, or why there are none ([failure], plain English). */
+data class ClipShowOutcome(val answers: List<ClipAnswer> = emptyList(), val failure: String? = null)
+
+/**
+ * Searching episodes from the clues and the heard lines: suspects ([ClipShowFinder]), the name check when
+ * there are many, then the subtitles of up to 3 shows. Moved out of the pipeline as it was, with three
+ * additions: episodes in [ClipEpisodeRank] order, the episode list and subtitles fetched while listening
+ * ([ClipPrefetch]) reused, and a "Match" note with the numbers behind the confidence.
+ */
+class ClipShowSearch(
+    private val finder: ClipShowFinder,
+    private val loadEpisodes: suspend (ShowGuess) -> List<ClipEpisode>,
+    private val subtitles: EpisodeSubtitleSource,
+    private val now: () -> Long,
+    private val work: CoroutineContext,
+) {
+    suspend fun run(
+        clues: ClipClues,
+        lines: List<ClipLine>,
+        prefetch: ClipPrefetch?,
+        timings: ClipTimings,
+        note: (String, String) -> Unit,
+        progress: (String) -> Unit,
+    ): ClipShowOutcome {
+        var suspects = finder.find(clues, lines, onNote = note)
+        timings.lap("guess")
+        val hint = ClipNames.hint(clues, lines)
+        val cached: Set<String> = prefetch?.fetched.orEmpty()
+        val episodeLists = mutableMapOf<String, List<ClipEpisode>>()
+        val early = prefetch?.show
+        if (prefetch != null && early != null) episodeLists[early.metaId] = prefetch.episodes
+        suspend fun episodesOf(show: ShowGuess): List<ClipEpisode> {
+            val loaded = episodeLists.getOrPut(show.metaId) { quietly { loadEpisodes(show) }.orEmpty() }
+            return ClipEpisodeRank.rank(orderEpisodes(loaded, hint), hint, lines, cached)
+        }
+
+        // Many suspects: one subtitle file of each tells which show has the people named in the clip.
+        val names = ClipNameCheck.names(lines)
+        if (ClipNameCheck.needed(suspects, names)) {
+            progress("Checking which show has the names heard")
+            note("Names heard", names.joinToString())
+            val ranked = withTimeoutOrNull(ClipFinderPipeline.NAME_CHECK_MS) {
+                ClipNameCheck.rank(suspects, names) { show ->
+                    episodesOf(show).firstOrNull()?.let { episode -> subtitles.cues(show.metaId, episode) }
+                }
+            }
+            if (ranked != null) {
+                note("Name check", ranked.joinToString { "${it.first.show.name} ${it.second}" }.take(300))
+                suspects = ranked.map { it.first }
+            }
+            timings.lap("names")
+        }
+        val chosen = suspects.take(ClipNameCheck.KEEP)
+        note("Show guesses", chosen.joinToString { "${it.show.name} (${it.why})" }.ifBlank { "none" })
+        if (chosen.isEmpty()) return ClipShowOutcome(failure = if (clues.typed.isBlank()) ClipMessages.NO_SHOW else ClipMessages.NO_TYPED_SHOW)
+        val deadline = now() + ClipFinderPipeline.SEARCH_BUDGET_MS
+        val owners = mutableMapOf<String, Pair<ShowGuess, ClipEpisode>>()
+        var best = emptyList<EpisodeCues>()
+        var candidates = emptyList<ClipCandidate>()
+        var tried = 0
+        var withSubtitles = 0
+        for (guess in chosen.map { it.show }) {
+            if (now() >= deadline) break
+            progress("Loading the episode list of ${guess.name}")
+            val episodes = episodesOf(guess)
+            timings.lap("episode list")
+            if (episodes.isEmpty()) continue
+            for (episode in episodes) owners[episode.videoId] = guess to episode
+            val showDeadline = minOf(deadline, now() + ClipFinderPipeline.SHOW_BUDGET_MS)
+            val result = withContext(work) {
+                subtitles.search(guess.metaId, episodes, lines, showDeadline, best) { done, total, found ->
+                    progress("Searching ${guess.name}: $done of $total episodes, $found with subtitles")
+                }
+            }
+            timings.lap("subtitles", "${result.tried} episodes")
+            best = result.best
+            candidates = result.candidates
+            tried += result.tried
+            withSubtitles += result.withSubtitles
+            if (result.decisive) break
+            if (result.tried < episodes.size) note("Search", "stopped at the time limit in ${guess.name}")
+        }
+        note("Subtitles", "$withSubtitles of $tried episodes")
+        if (tried == 0) return ClipShowOutcome(failure = ClipMessages.NO_EPISODES)
+        if (withSubtitles == 0) return ClipShowOutcome(failure = ClipMessages.NO_SUBTITLES)
+        note("Match", matchNote(lines, candidates))
+        val answers = candidates.filter { it.hits >= ClipMatcher.MIN_HITS }.mapNotNull { candidate ->
+            owners[candidate.videoId]?.let { (show, episode) -> ClipAnswer(candidate, show, episode.title, episode.thumbnail) }
+        }
+        note("Candidates", answers.size.toString())
+        return if (answers.isEmpty()) ClipShowOutcome(failure = ClipMessages.NO_MATCH) else ClipShowOutcome(answers)
+    }
+
+    /** "41 shared phrases of 160 heard (25%), next best 3": the numbers behind the confidence, to tune it on real clips. */
+    private fun matchNote(lines: List<ClipLine>, candidates: List<ClipCandidate>): String {
+        val heard = ClipText.triples(lines.flatMap { ClipText.normalize(it.text) }).toSet().size
+        val top = candidates.firstOrNull() ?: return "nothing shared with $heard heard phrases"
+        val share = if (heard == 0) 0 else top.hits * 100 / heard
+        return "${top.hits} shared phrases of $heard heard ($share%), next best ${candidates.getOrNull(1)?.hits ?: 0}"
+    }
+
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderState.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.math.roundToInt
+
+enum class ClipStage { ReadingLink, Listening, Searching, Done }
+
+/** One diagnostic line on the screen ("Audio: 312 s"). Real data from the run, so a screenshot shows where it broke. */
+data class ClipNote(val label: String, val value: String)
+
+data class ClipAnswer(
+    val candidate: ClipCandidate,
+    val show: ShowGuess,
+    val episodeTitle: String? = null,
+    val thumbnail: String? = null,
+)
+
+data class ClipFinderState(
+    val source: String = "",
+    /** The stage that runs now, or the one that failed when [failed] is true. */
+    val stage: ClipStage = ClipStage.ReadingLink,
+    val failed: Boolean = false,
+    val message: String = "",
+    val showFileHint: Boolean = false,
+    val progress: String = "",
+    val notes: List<ClipNote> = emptyList(),
+    val lines: List<ClipLine> = emptyList(),
+    /** What is known about the clip besides its sound; kept so a typed show name can search again. */
+    val clues: ClipClues = ClipClues(),
+    val answers: List<ClipAnswer> = emptyList(),
+    /** YouTube videos that hold the clip (their captions match what was heard), best first. */
+    val youtube: List<ClipVideoAnswer> = emptyList(),
+    /** Open the first YouTube video by itself, once: it is the only sure answer. */
+    val openYouTube: Boolean = false,
+    /** Shows to open when the clip itself could not be heard (no video address, or no speech). */
+    val shows: List<ShowGuess> = emptyList(),
+    /** The clip could not be heard: a typed name can only find the show, not the moment. */
+    val noClip: Boolean = false,
+) {
+    /** A note with the same label is replaced where it stands; a new label goes to the end. */
+    fun withNote(label: String, value: String): ClipFinderState {
+        val note = ClipNote(label, value)
+        val index = notes.indexOfFirst { it.label == label }
+        return copy(notes = if (index < 0) notes + note else notes.toMutableList().also { it[index] = note })
+    }
+}
+
+internal const val CLIP_LEAD_IN_MS = 10_000L
+
+internal object ClipMessages {
+    const val NO_BRIDGE = "Clip finder only works in the iPhone app."
+    const val PAGE_TIMEOUT = "Reading the link took longer than 45 s."
+    const val PAGE_FAILED = "The page could not be read."
+    const val NO_VIDEO = "Nuvio could not find the video's address on the page. The site may have asked for a login or changed its page."
+    const val LISTEN_TIMEOUT = "Listening took longer than 7 minutes and was stopped."
+    const val NO_SPEECH = "No speech was heard in this clip (music only, or not in English)."
+    const val NO_SHOW = "Nuvio could not work out the show from the caption, the hashtags, the poster or the text on screen. Type its name below."
+    const val NO_TYPED_SHOW = "No show or movie in your catalogs has that name. Check the spelling and try again."
+    const val NO_EPISODES = "The episode list of the guessed shows could not be loaded."
+    const val NO_SUBTITLES = "No English subtitles were found. Check that a subtitle add-on (OpenSubtitles) is switched on in Nuvio."
+    const val NO_MATCH = "No match: what was heard does not line up with the subtitles of the guessed shows. If you know the show, type its name below."
+    const val OPEN_SHOW = "The caption names the show below: open it to pick the episode yourself."
+    const val OPEN_TYPED_SHOW = "The clip could not be heard, so Nuvio cannot find the moment. Open the show below to pick the episode yourself."
+    const val FILE_HINT = "Other way: save the video to your iPhone, then in the Files app hold it, tap Share and pick Nuvio."
+    fun unexpected(error: Throwable): String = "Something went wrong: " + (error.message ?: error.toString()).take(200)
+}
+
+/**
+ * The type-the-show box is shown once there is something heard to search with, and after a clip that
+ * could not be heard (then a typed name only finds the show to open).
+ */
+internal fun clipCanType(state: ClipFinderState): Boolean =
+    (state.noClip && state.failed) ||
+        (state.lines.isNotEmpty() && (state.stage == ClipStage.Searching || state.stage == ClipStage.Done))
+
+/** Where playback starts: 10 s before the matched moment, or right after it. */
+internal fun clipStartMs(candidate: ClipCandidate, afterClip: Boolean): Long =
+    if (afterClip) candidate.endMs else maxOf(0L, candidate.startMs - CLIP_LEAD_IN_MS)
+
+/** "4:07" or "1:02:09". */
+internal fun clipClock(ms: Long): String {
+    val total = maxOf(0L, ms) / 1000
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val seconds = (total % 60).toString().padStart(2, '0')
+    return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:$seconds" else "$minutes:$seconds"
+}
+
+/** "South Park, season 14 episode 2: Title" or just the movie's name. */
+internal fun clipAnswerTitle(answer: ClipAnswer): String {
+    val season = answer.candidate.season
+    val episode = answer.candidate.episode
+    if (season == null || episode == null) return answer.show.name
+    val title = answer.episodeTitle?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+    return "${answer.show.name}, season $season episode $episode$title"
+}
+
+/** "at 4:07 to 9:30, 86% sure" or "..., 31% (weak)". */
+internal fun clipAnswerDetail(answer: ClipAnswer): String = clipMatchDetail(answer.candidate)
+
+/** "Made Up Interview (Sample Channel)", or "YouTube video" when its name is not known. */
+internal fun clipVideoTitle(answer: ClipVideoAnswer): String {
+    val name = answer.video.title.ifBlank { "YouTube video" }
+    return if (answer.video.channel.isBlank()) name else "$name (${answer.video.channel})"
+}
+
+/** The matched span and how sure the match is, for an episode or a YouTube video. */
+internal fun clipMatchDetail(c: ClipCandidate): String {
+    val percent = (c.confidence * 100).roundToInt()
+    return "at ${clipClock(c.startMs)} to ${clipClock(c.endMs)}, " + if (c.confident) "$percent% sure" else "$percent% (weak)"
+}
+
+/** "done", "now", "failed" or "" for stage number [index] (0..2) of CLIP_FINDER_STAGES. */
+internal fun clipStageMark(state: ClipFinderState, index: Int): String = when {
+    index < state.stage.ordinal -> "done"
+    index > state.stage.ordinal -> ""
+    state.failed -> "failed"
+    else -> "now"
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * The whole run for one shared clip: read the link (for Instagram also the post's other pages), listen,
+ * then search episodes; YouTube is searched beside it. While the clip is listened to, the show the page
+ * names is already fetched ([ClipPrefetch]) and YouTube already searched. Everything that touches the
+ * phone or the network is passed in, so this is tested with fakes. Call [run] from the main thread;
+ * [emit] may be called from another thread.
+ */
+class ClipFinderPipeline(
+    private val native: ClipFinderNative?,
+    private val finder: ClipShowFinder,
+    private val loadEpisodes: suspend (ShowGuess) -> List<ClipEpisode>,
+    private val subtitles: EpisodeSubtitleSource,
+    private val memory: ClipMemory,
+    private val now: () -> Long,
+    private val work: CoroutineContext = Dispatchers.Default,
+    private val youtube: ClipYouTubeFinder? = null,
+    private val webGet: suspend (String, Map<String, String>) -> ClipWebReply = { _, _ -> ClipWebReply(0, "") },
+) {
+    private val showSearch = ClipShowSearch(finder, loadEpisodes, subtitles, now, work)
+
+    private class NativeResult(
+        val page: String? = null,
+        val lines: List<ClipLine> = emptyList(),
+        val screenText: List<String> = emptyList(),
+        val error: String? = null,
+        val failedStage: String = "",
+    )
+
+    suspend fun run(source: String, emit: (ClipFinderState) -> Unit) =
+        guarded(Run(ClipFinderState(source = source), emit)) { it.stages() }
+
+    /**
+     * Searches again with a show name the user typed. [previous] is the state of the finished (or
+     * stopped) run: what was heard and the other clues are reused, nothing is read or listened to again.
+     * YouTube answers found before stay. After a clip that could not be heard it only finds the show.
+     */
+    suspend fun runTyped(previous: ClipFinderState, typed: String, emit: (ClipFinderState) -> Unit) {
+        val start = previous.copy(
+            stage = if (previous.noClip) previous.stage else ClipStage.Searching,
+            failed = false,
+            message = "",
+            showFileHint = false,
+            progress = "",
+            notes = previous.notes.filter { it.label !in SEARCH_NOTES },
+            answers = emptyList(),
+            openYouTube = false,
+            shows = emptyList(),
+            clues = previous.clues.copy(typed = typed.trim().take(MAX_TYPED)),
+        )
+        guarded(Run(start, emit)) { it.search(null, null) }
+    }
+
+    private suspend fun guarded(run: Run, block: suspend (Run) -> Unit) {
+        try {
+            block(run)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            run.fail(ClipMessages.unexpected(e))
+        }
+    }
+
+    private inner class Run(start: ClipFinderState, private val emit: (ClipFinderState) -> Unit) {
+        private val state = MutableStateFlow(start)
+        private val source = start.source
+        private val isFile = source.startsWith("file:", ignoreCase = true)
+        private val timings = ClipTimings(now)
+        private var lastPart = ""
+
+        fun change(block: (ClipFinderState) -> ClipFinderState) {
+            state.update(block)
+            emit(state.value)
+        }
+
+        fun note(label: String, value: String) = change { it.withNote(label, value) }
+
+        fun fail(message: String, fileHint: Boolean = false) = change {
+            it.copy(failed = true, message = message, showFileHint = fileHint, progress = "").withNote("Timings", timings.line())
+        }
+
+        suspend fun stages() {
+            emit(state.value)
+            val phone = this@ClipFinderPipeline.native ?: return fail(ClipMessages.NO_BRIDGE)
+
+            // 1. Reading link
+            var pageClues = ClipClues()
+            var mediaUrls = listOf(source)
+            var pageUrl = ""
+            if (!isFile) {
+                val read = withTimeoutOrNull(PAGE_TIMEOUT_MS) { call { phone.readPage(source, it) } }
+                    ?: return fail(ClipMessages.PAGE_TIMEOUT, fileHint = true)
+                val pageJson = read.page ?: return fail(read.error ?: ClipMessages.PAGE_FAILED, fileHint = true)
+                timings.lap("page")
+                val page = ClipPageParser.parse(pageJson)
+                mediaUrls = page.videoUrls
+                pageUrl = page.pageUrl.ifBlank { source }
+                pageClues = ClipClues(
+                    caption = page.caption,
+                    author = page.author.ifBlank { ClipNames.authorInLink(pageUrl) },
+                    sound = page.sound,
+                    keywords = page.keywords,
+                    hashtags = page.hashtags,
+                )
+                val code = ClipInstagram.shortcode(pageUrl).ifBlank { ClipInstagram.shortcode(source) }
+                if (mediaUrls.isEmpty() && code.isNotEmpty()) {
+                    change { it.copy(progress = "Trying Instagram's other pages of this post") }
+                    val first = "page: " + ClipInstagram.describe(pageJson)
+                    val other = ClipInstagram.findVideo(code, webGet, { url -> readOtherPage(phone, url) }, first) { note("Instagram", it) }
+                    timings.lap("Instagram pages")
+                    change { it.copy(progress = "") }
+                    if (other != null) {
+                        mediaUrls = other.videoUrls
+                        if (pageClues.caption.isBlank()) pageClues = pageClues.copy(caption = other.caption)
+                        if (pageClues.author.isBlank()) pageClues = pageClues.copy(author = other.author)
+                    }
+                }
+                note("Caption", pageClues.caption.ifBlank { "none" }.take(120))
+                if (pageClues.author.isNotBlank()) note("Author", pageClues.author)
+                if (pageClues.sound.isNotBlank()) note("Sound", pageClues.sound.take(100))
+                if (pageClues.keywords.isNotEmpty()) note("Keywords", pageClues.keywords.joinToString().take(160))
+                note("Video address found", if (mediaUrls.isEmpty()) "no" else "yes (${mediaUrls.size})")
+                if (mediaUrls.isEmpty()) return offerShows(pageClues, ClipMessages.NO_VIDEO, fileHint = true)
+            } else {
+                change { it.copy(stage = ClipStage.Listening) }
+            }
+            coroutineScope { listenAndSearch(this, phone, mediaUrls, pageUrl, pageClues) }
+        }
+
+        /** 2. Listening (for a link the download still counts as reading the link), with the prefetch and YouTube beside it. */
+        private suspend fun listenAndSearch(
+            scope: CoroutineScope,
+            phone: ClipFinderNative,
+            mediaUrls: List<String>,
+            pageUrl: String,
+            pageClues: ClipClues,
+        ) {
+            val prefetch = if (isFile) null else ClipPrefetch(finder, loadEpisodes, subtitles)
+            val early = prefetch?.let { pre -> scope.launch { beside("prefetch", { "${pre.fetched.size} files" }) { pre.run(pageClues) } } }
+            var tube = if (isFile) null else startTube(scope, pageClues)
+            try {
+                val heard = withTimeoutOrNull(LISTEN_TIMEOUT_MS) { call { phone.listen(mediaUrls, pageUrl, it) } }
+                early?.cancelAndJoin()
+                val fetchedShow = prefetch?.show
+                if (prefetch != null && fetchedShow != null) {
+                    note("Fetched while listening", "${fetchedShow.name}: ${prefetch.fetched.size} subtitle files")
+                }
+                if (heard == null) return fail(ClipMessages.LISTEN_TIMEOUT, fileHint = !isFile)
+                if (heard.error != null) {
+                    if (heard.failedStage == CLIP_FINDER_STAGES[1]) change { it.copy(stage = ClipStage.Listening) }
+                    return fail(heard.error, fileHint = !isFile)
+                }
+                val lines = heard.lines
+                val clues = pageClues.copy(screenText = heard.screenText)
+                change { it.copy(stage = ClipStage.Listening, lines = lines, clues = clues).withNote("Lines heard", lines.size.toString()) }
+                note("Text on screen", clues.screenText.joinToString(" | ").ifBlank { "none" }.take(200))
+                if (lines.sumOf { ClipText.normalize(it.text).size } < MIN_WORDS) return offerShows(clues, ClipMessages.NO_SPEECH)
+                if (tube == null) tube = startTube(scope, clues)
+                search(prefetch, tube)
+            } finally {
+                early?.cancel()
+                tube?.cancel()
+            }
+        }
+
+        /** 3. Searching episodes (and checking the YouTube videos), from the clues and lines in the state. */
+        suspend fun search(prefetch: ClipPrefetch?, tube: Deferred<List<ClipVideo>>?) {
+            val clues = state.value.clues
+            val lines = state.value.lines
+            if (clues.typed.isNotBlank()) note("Show typed", clues.typed)
+            if (state.value.noClip) return showsOnly(clues)
+            change { it.copy(stage = ClipStage.Searching, progress = "Working out the show") }
+            val outcome = showSearch.run(clues, lines, prefetch, timings, { label, value -> note(label, value) }) { text ->
+                change { it.copy(progress = text) }
+            }
+            var videos = state.value.youtube
+            if (tube != null) {
+                change { it.copy(progress = "Checking the YouTube videos") }
+                val found = tube.await()
+                timings.lap("YouTube wait")
+                videos = ClipYouTube.verify(found, lines)
+                if (found.isNotEmpty()) note("YouTube match", ClipYouTube.matchNote(videos, found.count { it.cues.isNotEmpty() }))
+            }
+            val answers = outcome.answers
+            if (answers.isEmpty() && (videos.isEmpty() || clues.typed.isNotBlank())) {
+                change { it.copy(youtube = videos) }
+                return fail(outcome.failure ?: ClipMessages.NO_MATCH)
+            }
+            val open = videos.isNotEmpty() && answers.none { it.candidate.confident }
+            change {
+                it.copy(stage = ClipStage.Done, answers = answers, youtube = videos, openYouTube = open, progress = "")
+                    .withNote("Timings", timings.line())
+            }
+            // A confident match is remembered (show and poster only), so the next clip of this show or poster starts there.
+            val top = answers.firstOrNull()
+            if (top != null && top.candidate.confident) runCatching { memory.remember(clues.author, top.show) }
+        }
+
+        /** The clip cannot be heard (no video address, or no speech): the show named by the other clues can still be opened. */
+        private suspend fun offerShows(clues: ClipClues, message: String, fileHint: Boolean = false) {
+            change { it.copy(progress = "Looking for the show in the caption") }
+            val found = quietly { withTimeoutOrNull(OFFER_MS) { finder.find(clues, emptyList()) } }.orEmpty()
+                .filter { it.score >= OFFER_SCORE }
+                .take(ClipNameCheck.KEEP)
+            if (found.isNotEmpty()) note("Show from the caption", found.joinToString { "${it.show.name} (${it.why})" })
+            change { it.copy(shows = found.map { suspect -> suspect.show }, noClip = true) }
+            fail(if (found.isEmpty()) message else "$message ${ClipMessages.OPEN_SHOW}", fileHint)
+        }
+
+        /** A name typed after a clip that could not be heard: find the show to open, nothing more. */
+        private suspend fun showsOnly(clues: ClipClues) {
+            change { it.copy(progress = "Looking up the show") }
+            val found = finder.find(clues, emptyList()) { label, value -> note(label, value) }.take(ClipNameCheck.KEEP)
+            change { it.copy(shows = found.map { suspect -> suspect.show }) }
+            fail(if (found.isEmpty()) ClipMessages.NO_TYPED_SHOW else ClipMessages.OPEN_TYPED_SHOW, fileHint = !isFile)
+        }
+
+        private suspend fun readOtherPage(phone: ClipFinderNative, url: String): String? =
+            withTimeoutOrNull(PAGE_TIMEOUT_MS) { call { phone.readPage(url, it) } }?.page
+
+        /** YouTube is searched and its captions read while the rest goes on; checked against what was heard at the end. */
+        private fun startTube(scope: CoroutineScope, clues: ClipClues): Deferred<List<ClipVideo>>? {
+            val tubeFinder = youtube ?: return null
+            return scope.async {
+                val started = now()
+                val found = quietly { withTimeoutOrNull(YOUTUBE_MS) { tubeFinder.collect(clues) { label, value -> note(label, value) } } }.orEmpty()
+                timings.beside("YouTube", now() - started, "${found.size} videos")
+                found
+            }
+        }
+
+        /** Runs [block] and writes its time down as work beside the stages, also when it is stopped. */
+        private suspend fun beside(stage: String, extra: () -> String, block: suspend () -> Unit) {
+            val started = now()
+            try {
+                quietly { block() }
+            } finally {
+                timings.beside(stage, now() - started, extra())
+            }
+        }
+
+        /** Starts one native call and waits for its end. Cancelling (or a time-out) stops the native work. */
+        private suspend fun call(start: (ClipNativeListener) -> Unit): NativeResult =
+            suspendCancellableCoroutine { continuation ->
+                val lines = mutableListOf<ClipLine>()
+                val screen = mutableListOf<String>()
+                var ended = false
+                fun end(result: NativeResult) {
+                    if (ended) return
+                    ended = true
+                    continuation.resume(result)
+                }
+                continuation.invokeOnCancellation {
+                    ended = true
+                    native?.cancel()
+                }
+                start(object : ClipNativeListener {
+                    override fun onNote(label: String, value: String) {
+                        if (ended) return
+                        when (label) {
+                            "Download" -> if (value.startsWith("HTTP")) timings.lap("download")
+                            "Speech" -> timings.lap("frames")
+                            "Audio" -> {
+                                timings.lap("sound")
+                                change { it.copy(stage = ClipStage.Listening) }
+                            }
+                            "Listening" -> lastPart = value
+                        }
+                        note(label, value)
+                    }
+
+                    override fun onPage(pageJson: String) = end(NativeResult(page = pageJson))
+
+                    override fun onScreenText(text: String) {
+                        if (ended) return
+                        screen += text.lines().map { it.trim().take(MAX_TYPED) }.filter { it.isNotEmpty() }.take(maxOf(0, MAX_SCREEN_LINES - screen.size))
+                    }
+
+                    override fun onLine(text: String, startMs: Long, endMs: Long) {
+                        if (!ended) lines += ClipLine(text, startMs, endMs)
+                    }
+
+                    override fun onDone() {
+                        if (!ended) timings.lap("listen", lastPart)
+                        end(NativeResult(lines = lines.toList(), screenText = screen.toList()))
+                    }
+
+                    override fun onFailed(stage: String, message: String) =
+                        end(NativeResult(error = message, failedStage = stage))
+                })
+            }
+
+        private suspend fun <T> quietly(block: suspend () -> T): T? =
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+    }
+
+    companion object {
+        const val PAGE_TIMEOUT_MS = 45_000L
+        const val LISTEN_TIMEOUT_MS = 420_000L
+        const val SEARCH_BUDGET_MS = 240_000L
+        const val SHOW_BUDGET_MS = 120_000L
+        /** Fewer recognised words than this cannot be matched: "no speech". */
+        const val MIN_WORDS = 6
+        const val MAX_TYPED = 80
+        const val NAME_CHECK_MS = 45_000L
+        const val MAX_SCREEN_LINES = 40
+        /** YouTube gets this long from its start (it starts before listening for a link). */
+        const val YOUTUBE_MS = 60_000L
+        /** Looking for the show to open when the clip cannot be heard. */
+        const val OFFER_MS = 20_000L
+        /** A show is offered to open only when a clue names it this clearly (its name in the caption: 85). */
+        const val OFFER_SCORE = 85
+        /** Notes of a search; removed when a typed show name starts a new search. */
+        private val SEARCH_NOTES = setOf(
+            "Show typed", "Known titles", "Searches", "Names heard", "Name check", "Show guesses", "Search", "Subtitles",
+            "Match", "Candidates", "Show from the caption", "Timings",
+        )
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+/** The pipeline with YouTube, Instagram's other pages and the work done while listening. Everything is made up. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class ClipFinderPipelineWebTest {
+    private val link = "https://clips.example.test/@sample.user/video/7000000000000000001"
+    private val element = "https://v16.example.test/element.mp4"
+    private val show = ShowGuess("tt001", "series", "Made Up Show")
+    private val episodes = (1..2).flatMap { season ->
+        (1..6).map { number -> ClipEpisode("tt001:$season:$number", "tt001:$season:$number", "series", season, number, "Title $season-$number") }
+    }
+    private val texts = episodes.associate { it.videoId to ClipTestText.cueTexts(it.season!! * 100 + it.episode!!) }
+    private val clipLines = ClipTestText.linesFrom(texts.getValue("tt001:2:5"), 20..31)
+    private val interview = ClipTestText.cueTexts(501)
+
+    private fun pageJson(caption: String, videos: List<String> = listOf(element)): String = buildJsonObject {
+        put("url", link)
+        put("title", "")
+        put("metas", buildJsonObject {})
+        put("videos", buildJsonArray { videos.forEach { add(it) } })
+        put(
+            "scripts",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put(
+                            "item",
+                            buildJsonObject {
+                                put("desc", caption)
+                                put("author", buildJsonObject { put("uniqueId", "sample.user") })
+                                put("video", buildJsonObject {})
+                            },
+                        )
+                    }.toString(),
+                )
+            },
+        )
+    }.toString()
+
+    /** The phone: reads pages from [pages] (by address), and listens at once, or only on [release] when [hold]. */
+    private class Phone(val pages: Map<String, String>, val lines: List<ClipLine>, val hold: Boolean = false) : ClipFinderNative {
+        var readLinks = 0
+        var listenCalls = 0
+        var listenMedia: List<String>? = null
+        private var waiting: ClipNativeListener? = null
+
+        override fun readPage(link: String, listener: ClipNativeListener) {
+            readLinks++
+            val page = pages[link]
+            if (page != null) listener.onPage(page) else listener.onFailed("Reading link", "The page did not load.")
+        }
+
+        override fun listen(mediaUrls: List<String>, pageUrl: String, listener: ClipNativeListener) {
+            listenCalls++
+            listenMedia = mediaUrls
+            listener.onNote("Audio", "41 s")
+            if (hold) waiting = listener else finish(listener)
+        }
+
+        fun release() = waiting?.let { finish(it) }
+
+        private fun finish(listener: ClipNativeListener) {
+            lines.forEach { listener.onLine(it.text, it.startMs, it.endMs) }
+            listener.onDone()
+        }
+
+        override fun cancel() = Unit
+
+        override fun cacheRead(key: String): String? = null
+
+        override fun cacheWrite(key: String, text: String) = Unit
+
+        override fun settingRead(key: String): String? = null
+
+        override fun settingWrite(key: String, text: String) = Unit
+
+        override fun askModel(prompt: String, listener: ClipModelListener) = listener.onAnswer(null, "not in tests")
+    }
+
+    private inner class Harness(
+        val phone: Phone,
+        val tube: FakeTube = FakeTube(),
+        val webGet: suspend (String, Map<String, String>) -> ClipWebReply = { _, _ -> ClipWebReply(404, "") },
+        val search: suspend (String) -> List<ShowGuess> = { query -> if (query == "Made Up Show") listOf(show) else emptyList() },
+        val popular: suspend () -> List<ShowGuess> = { emptyList() },
+    ) {
+        val addon = FakeSubtitleAddon(texts)
+        val states = mutableListOf<ClipFinderState>()
+        val last: ClipFinderState get() = states.last()
+        var loads = 0
+        private val memory = ClipMemory({ null }, { }, { 1_000L })
+        private val subtitles = EpisodeSubtitleSource({ _, id -> addon.list(id) }, { url -> addon.download(url) }, MapSubtitleCache(), { 0L })
+        private val pipeline = ClipFinderPipeline(
+            phone, ClipShowFinder(search, popular, memory), { loads++; episodes }, subtitles, memory, { 0L }, EmptyCoroutineContext,
+            youtube = tube.finder(), webGet = webGet,
+        )
+
+        suspend fun run(source: String = link) = pipeline.run(source) { states += it }
+
+        suspend fun typed(name: String) = pipeline.runTyped(last, name) { states += it }
+
+        fun note(label: String): String = last.notes.first { it.label == label }.value
+    }
+
+    /** YouTube serving one full upload whose captions are [captions]. */
+    private fun tubeWith(captions: List<String>) = FakeTube(
+        searchIds = listOf("FULLvideo01"),
+        players = mapOf("FULLvideo01" to ClipTubeSamples.playerJson("FULLvideo01", "Made Up Interview", 3_600)),
+        captions = mapOf("https://www.youtube.com/api/timedtext?v=FULLvideo01&lang=en" to ClipTubeSamples.captionXml(captions)),
+    )
+
+    @Test
+    fun `a clip that is on YouTube only opens the YouTube video by itself`() = runTest {
+        val phone = Phone(mapOf(link to pageJson("Made up interview with a sample guest")), ClipTestText.linesFrom(interview, 20..31))
+        val h = Harness(phone, tube = tubeWith(interview), search = { emptyList() })
+        h.run()
+        assertEquals(ClipStage.Done, h.last.stage)
+        assertFalse(h.last.failed)
+        assertEquals(emptyList(), h.last.answers)
+        assertEquals(listOf("FULLvideo01"), h.last.youtube.map { it.video.id })
+        assertTrue(h.last.openYouTube)
+        assertTrue(h.note("YouTube match").startsWith("Made Up Interview: "))
+        assertTrue(h.note("Timings").endsWith(" s"))
+    }
+
+    @Test
+    fun `an episode and the YouTube video are both shown and nothing opens by itself`() = runTest {
+        val phone = Phone(mapOf(link to pageJson("Made Up Show S2E5 the lamp scene")), clipLines)
+        val h = Harness(phone, tube = tubeWith(texts.getValue("tt001:2:5")))
+        h.run()
+        assertEquals(ClipStage.Done, h.last.stage)
+        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
+        assertTrue(h.last.answers.first().candidate.confident)
+        assertEquals(listOf("FULLvideo01"), h.last.youtube.map { it.video.id })
+        assertFalse(h.last.openYouTube)
+        assertTrue(h.note("Match").contains(" shared phrases of "))
+    }
+
+    @Test
+    fun `an Instagram reel without a video address gets it from the embed page`() = runTest {
+        val reel = "https://www.instagram.com/reel/DAbc123xyz/?igsh=c2FtcGxl"
+        val page = buildJsonObject {
+            put("url", "https://www.instagram.com/reel/DAbc123xyz/")
+            put("title", "")
+            put(
+                "metas",
+                buildJsonObject {
+                    put("og:description", "585K likes, 550 comments - sample.user on December 15, 2025: \"Made Up Show S2E5 the lamp scene\". ")
+                },
+            )
+            put("videos", buildJsonArray {})
+            put("scripts", buildJsonArray {})
+        }.toString()
+        val embed = """<html><script>window.__additionalDataLoaded('extra',{"shortcode_media":{"video_url":"https://cdn.example.test/reel.mp4"}});</script></html>"""
+        val asked = mutableListOf<String>()
+        val phone = Phone(mapOf(reel to page), clipLines)
+        val h = Harness(phone, webGet = { url, _ ->
+            asked += url
+            ClipWebReply(200, embed)
+        })
+        h.run(reel)
+        assertEquals(listOf("https://www.instagram.com/p/DAbc123xyz/embed/captioned/"), asked.filter { "instagram.com" in it })
+        assertEquals(listOf("https://cdn.example.test/reel.mp4"), phone.listenMedia)
+        assertEquals(1, phone.readLinks)
+        assertEquals("page: 0 KB, video key no; embed download: HTTP 200, 0 KB, video key yes", h.note("Instagram"))
+        assertEquals("Made Up Show S2E5 the lamp scene", h.note("Caption"))
+        assertEquals("sample.user", h.note("Author"))
+        assertEquals(ClipStage.Done, h.last.stage)
+        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
+    }
+
+    @Test
+    fun `without a video the show named in the caption is offered, and a typed name only finds the show`() = runTest {
+        val phone = Phone(mapOf(link to pageJson("Made Up Show S2E5 the lamp scene", videos = emptyList())), clipLines)
+        val h = Harness(phone)
+        h.run()
+        assertTrue(h.last.failed)
+        assertEquals(ClipMessages.NO_VIDEO + " " + ClipMessages.OPEN_SHOW, h.last.message)
+        assertEquals(listOf(show), h.last.shows)
+        assertTrue(h.last.noClip)
+        assertTrue(clipCanType(h.last))
+        h.typed("Made Up Show")
+        assertTrue(h.last.failed)
+        assertEquals(ClipMessages.OPEN_TYPED_SHOW, h.last.message)
+        assertEquals(listOf(show), h.last.shows)
+        assertEquals(ClipStage.ReadingLink, h.last.stage)
+        assertEquals(0, phone.listenCalls)
+    }
+
+    @Test
+    fun `while the clip is listened to the named show's subtitles are fetched and YouTube is searched`() = runTest {
+        val phone = Phone(mapOf(link to pageJson("lol #madeupshow")), clipLines, hold = true)
+        val tube = FakeTube()
+        val h = Harness(phone, tube = tube, search = { emptyList() }, popular = { listOf(show) })
+        val job = launch { h.run() }
+        runCurrent()
+        assertEquals(1, phone.listenCalls)
+        assertEquals(12, h.addon.downloaded.size, "all 12 episodes are fetched before listening ends")
+        assertTrue(tube.asked.isNotEmpty(), "YouTube is searched before listening ends")
+        phone.release()
+        job.join()
+        assertEquals(12, h.addon.downloaded.size, "nothing is downloaded twice")
+        assertEquals(1, h.loads)
+        assertEquals(ClipStage.Done, h.last.stage)
+        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
+        assertEquals("Made Up Show: 12 subtitle files", h.note("Fetched while listening"))
+        assertTrue("prefetch 0.0 s (12 files) beside" in h.note("Timings"))
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
+import com.nuvio.app.features.addons.httpPostJsonWithHeaders
+import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.player.addonSubtitleRequests
+import com.nuvio.app.features.player.loadAddonSubtitles
+import com.nuvio.app.features.streams.epochMs
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * The one running Clip finder search. It lives outside the screen so that going to the stream list
+ * and back does not start the search again.
+ */
+object ClipFinderSession {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val _state = MutableStateFlow(ClipFinderState())
+    val state: StateFlow<ClipFinderState> = _state.asStateFlow()
+    private var job: Job? = null
+    private var runId = 0
+    private var pipeline: ClipFinderPipeline? = null
+
+    /** Starts the search for [source]. Does nothing when that clip is already running or shown, unless [restart]. */
+    fun start(source: String, restart: Boolean = false) {
+        if (!restart && _state.value.source == source) return
+        job?.cancel()
+        val id = ++runId
+        _state.value = ClipFinderState(source = source)
+        val native = ClipFinderBridge.current()
+        val cache = object : ClipSubtitleCache {
+            override fun read(key: String): String? = native?.cacheRead(key)
+            override fun write(key: String, text: String) {
+                native?.cacheWrite(key, text)
+            }
+        }
+        val memory = ClipMemory(
+            read = { native?.settingRead(ClipMemory.KEY) },
+            write = { text -> native?.settingWrite(ClipMemory.KEY, text) },
+            now = ::epochMs,
+        )
+        val created = ClipFinderPipeline(
+            native = native,
+            finder = ClipShowFinder(::clipSearchShows, ::clipPopularShows, memory) { prompt -> clipAskModel(native, prompt) },
+            loadEpisodes = ::clipLoadEpisodes,
+            subtitles = EpisodeSubtitleSource(::clipListSubtitles, ::clipDownloadText, cache, ::epochMs),
+            memory = memory,
+            now = ::epochMs,
+            youtube = ClipYouTubeFinder(::clipWebGet, ::clipWebPost),
+            webGet = ::clipWebGet,
+        )
+        pipeline = created
+        job = scope.launch {
+            created.run(source) { if (id == runId) _state.value = it }
+        }
+    }
+
+    /** Searches again with a show name the user typed, reusing what was heard. Stops a search that still runs. */
+    fun searchTyped(name: String) {
+        val current = _state.value
+        val active = pipeline ?: return
+        if (name.isBlank() || !clipCanType(current)) return
+        job?.cancel()
+        val id = ++runId
+        job = scope.launch {
+            active.runTyped(current, name) { if (id == runId) _state.value = it }
+        }
+    }
+
+    /** The screen opened the YouTube video by itself: it must not do so again when Mo comes back. */
+    fun youTubeOpened() {
+        _state.value = _state.value.copy(openYouTube = false)
+    }
+}
+
+private const val MODEL_TIMEOUT_MS = 12_000L
+
+/** One question to Apple's on-device model through the bridge; a missing bridge or no answer in 12 s is a problem text. */
+internal suspend fun clipAskModel(native: ClipFinderNative?, prompt: String): ClipModelAnswer {
+    val phone = native ?: return ClipModelAnswer(problem = "only in the iPhone app")
+    return withTimeoutOrNull(MODEL_TIMEOUT_MS) {
+        suspendCancellableCoroutine { continuation ->
+            phone.askModel(
+                prompt,
+                object : ClipModelListener {
+                    override fun onAnswer(text: String?, problem: String?) {
+                        if (continuation.isActive) continuation.resume(ClipModelAnswer(text.orEmpty(), problem.orEmpty()))
+                    }
+                },
+            )
+        }
+    } ?: ClipModelAnswer(problem = "no answer in 12 s")
+}
+
+private var popularShows: List<ShowGuess> = emptyList()
+
+/**
+ * Well-known titles to compare hashtags and handles with: the first page of every plain catalog
+ * (series and movies, no required filter) of the switched-on add-ons, for example Cinemeta's
+ * "Popular". Fetched once per app start; an empty answer is asked for again next time.
+ */
+internal suspend fun clipPopularShows(): List<ShowGuess> {
+    if (popularShows.isNotEmpty()) return popularShows
+    AddonRepository.initialize()
+    val catalogs = AddonRepository.uiState.value.addons.enabledAddons().mapNotNull { it.manifest }.flatMap { manifest ->
+        manifest.catalogs
+            .filter { catalog -> (catalog.type == "series" || catalog.type == "movie") && catalog.extra.none { it.isRequired } }
+            .map { manifest to it }
+    }.take(8)
+    val pages = coroutineScope {
+        catalogs.map { (manifest, catalog) ->
+            async {
+                quietly(8_000L) { fetchCatalogPage(manifest.transportUrl, catalog.type, catalog.id, maxItems = 100).items }.orEmpty()
+            }
+        }.awaitAll()
+    }
+    val shows = pages.flatten().filter { it.name.isNotBlank() }.map { ShowGuess(it.id, it.type, it.name, it.poster) }.distinctBy { it.metaId }
+    popularShows = shows.filter { it.metaId.startsWith("tt") }.ifEmpty { shows }
+    return popularShows
+}
+
+private suspend fun <T> quietly(timeoutMs: Long, block: suspend () -> T): T? =
+    withTimeoutOrNull(timeoutMs) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/** Nuvio's own search: every search catalog (series and movies) of the switched-on add-ons, results mixed by rank. */
+internal suspend fun clipSearchShows(query: String): List<ShowGuess> = coroutineScope {
+    AddonRepository.initialize()
+    val catalogs = AddonRepository.uiState.value.addons.enabledAddons().mapNotNull { it.manifest }.flatMap { manifest ->
+        manifest.catalogs
+            .filter { catalog ->
+                (catalog.type == "series" || catalog.type == "movie") &&
+                    catalog.extra.any { it.name == "search" } &&
+                    catalog.extra.none { it.isRequired && it.name != "search" }
+            }
+            .map { manifest to it }
+    }.take(6)
+    val pages = catalogs.map { (manifest, catalog) ->
+        async {
+            quietly(8_000L) {
+                fetchCatalogPage(manifest.transportUrl, catalog.type, catalog.id, search = query, maxItems = 8).items
+            }.orEmpty()
+        }
+    }.awaitAll()
+    val mixed = (0 until 8).flatMap { rank -> pages.mapNotNull { it.getOrNull(rank) } }
+        .map { ShowGuess(it.id, it.type, it.name, it.poster) }
+        .distinctBy { it.metaId }
+    // Subtitle add-ons only know IMDb ids ("tt..."), so those results go first when there are any.
+    mixed.filter { it.metaId.startsWith("tt") }.ifEmpty { mixed }
+}
+
+/** The episodes of a series (specials and season 0 left out), or the movie itself as one entry. */
+internal suspend fun clipLoadEpisodes(show: ShowGuess): List<ClipEpisode> {
+    val meta = quietly(25_000L) { MetaDetailsRepository.fetch(show.type, show.metaId) } ?: return emptyList()
+    val imdbId = listOf(meta.id, meta.imdbId.orEmpty(), show.metaId).firstOrNull { it.startsWith("tt") }
+    val episodes = meta.videos.filter { (it.season ?: 0) > 0 && it.episode != null }
+    if (episodes.isEmpty()) {
+        return listOf(ClipEpisode(videoId = meta.id, subtitleId = imdbId ?: meta.id, type = show.type))
+    }
+    return episodes.map { video ->
+        val subtitleId = if (video.id.startsWith("tt") || imdbId == null) video.id else "$imdbId:${video.season}:${video.episode}"
+        ClipEpisode(video.id, subtitleId, show.type, video.season, video.episode, video.title, video.thumbnail, video.overview)
+    }
+}
+
+internal suspend fun clipListSubtitles(type: String, subtitleId: String): List<ClipSubtitleLink> =
+    loadAddonSubtitles(addonSubtitleRequests(type, subtitleId)).map { ClipSubtitleLink(it.url, it.language) }
+
+internal suspend fun clipDownloadText(url: String): String = httpGetTextWithHeaders(url, emptyMap())
+
+/** A plain web request from Kotlin (YouTube, Instagram's embed page), at most 6 MB of answer. */
+internal suspend fun clipWebGet(url: String, headers: Map<String, String>): ClipWebReply {
+    val reply = httpRequestRaw("GET", url, headers, "", maxResponseBodyBytes = 6 * 1024 * 1024)
+    return ClipWebReply(reply.status, reply.body)
+}
+
+/** A JSON request (YouTube's player answer); a refusal throws, which the caller treats as "failed". */
+internal suspend fun clipWebPost(url: String, body: String, headers: Map<String, String>): ClipWebReply =
+    ClipWebReply(200, httpPostJsonWithHeaders(url, body, headers))
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderScreen.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.NuvioSectionLabel
+import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.nuvio
+import io.ktor.http.decodeURLPart
+
+internal const val CLIP_FINDER_TITLE = "Clip finder"
+internal val CLIP_FINDER_STAGES = listOf("Reading link", "Listening", "Searching episodes")
+
+private fun isClipFile(source: String) = source.startsWith("file://", ignoreCase = true)
+
+/** The text shown for a shared clip: a web link as it is, a shared video by its file name. */
+internal fun clipSourceLabel(source: String): String {
+    if (!isClipFile(source)) return source
+    val name = source.substringBefore('?').substringBefore('#').substringAfterLast('/')
+    return runCatching { name.decodeURLPart() }.getOrDefault(name)
+}
+
+/**
+ * [onOpen] gets the tapped candidate and the time to start playing from, in milliseconds; [onShow] a show
+ * to open (its episode list) when the clip itself could not be heard. A YouTube video opens through the
+ * system (the YouTube app when installed): by itself once when it is the only sure answer, else on a tap.
+ */
+@Composable
+fun ClipFinderScreen(
+    source: String,
+    onBack: () -> Unit,
+    onOpen: (ClipAnswer, Long) -> Unit = { _, _ -> },
+    onShow: (ShowGuess) -> Unit = {},
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val current by ClipFinderSession.state.collectAsStateWithLifecycle()
+    val state = if (current.source == source) current else ClipFinderState(source = source)
+    var afterClip by rememberSaveable { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val openVideo: (ClipVideoAnswer, Long) -> Unit = { video, startMs ->
+        runCatching { uriHandler.openUri(ClipYouTube.openUrl(video.video.id, startMs)) }
+    }
+    LaunchedEffect(source) { ClipFinderSession.start(source) }
+    LaunchedEffect(state.openYouTube) {
+        val first = state.youtube.firstOrNull()
+        if (state.openYouTube && first != null) {
+            ClipFinderSession.youTubeOpened()
+            openVideo(first, clipStartMs(first.candidate, afterClip))
+        }
+    }
+
+    NuvioScreen {
+        item { NuvioScreenHeader(title = CLIP_FINDER_TITLE, onBack = onBack) }
+        item {
+            NuvioSurfaceCard {
+                NuvioSectionLabel(if (isClipFile(source)) "Shared video" else "Shared link")
+                Text(clipSourceLabel(source), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            }
+        }
+        item { ClipStagesCard(state) }
+        if (state.failed) {
+            item { ClipFailureCard(state, onRetry = { ClipFinderSession.start(source, restart = true) }) }
+        }
+        if (state.answers.isNotEmpty()) {
+            item { ClipAnswersCard(state.answers, afterClip, onAfterClip = { afterClip = it }, onOpen = onOpen) }
+        }
+        if (state.youtube.isNotEmpty()) {
+            item { ClipYouTubeCard(state.youtube, afterClip, onOpen = openVideo) }
+        }
+        if (state.shows.isNotEmpty()) {
+            item { ClipShowsCard(state.shows, onShow) }
+        }
+        if (clipCanType(state)) {
+            item { ClipTypeCard(heard = !state.noClip, onSearch = { ClipFinderSession.searchTyped(it) }) }
+        }
+        if (state.notes.isNotEmpty()) {
+            item { ClipNotesCard(state.notes) }
+        }
+        if (state.lines.isNotEmpty()) {
+            item { ClipLinesCard(state.lines) }
+        }
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderParts.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.Chip
+import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.core.ui.NuvioPrimaryButton
+import com.nuvio.app.core.ui.NuvioSectionLabel
+import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.nuvio
+
+@Composable
+internal fun ClipStagesCard(state: ClipFinderState) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Steps")
+        CLIP_FINDER_STAGES.forEachIndexed { index, stage ->
+            val mark = clipStageMark(state, index)
+            Text(
+                text = "${index + 1}. $stage" + if (mark.isEmpty()) "" else " ($mark)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (mark == "now" || mark == "failed") colors.textPrimary else colors.textMuted,
+            )
+        }
+        if (state.progress.isNotBlank()) {
+            Text(state.progress, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        }
+    }
+}
+
+@Composable
+internal fun ClipFailureCard(state: ClipFinderState, onRetry: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Stopped at: ${CLIP_FINDER_STAGES.getOrElse(state.stage.ordinal) { "" }}")
+        Text(state.message, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        if (state.showFileHint) {
+            Text(ClipMessages.FILE_HINT, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+        }
+        NuvioPrimaryButton(text = "Try again", modifier = Modifier.padding(top = 8.dp), onClick = onRetry)
+    }
+}
+
+@Composable
+internal fun ClipAnswersCard(
+    answers: List<ClipAnswer>,
+    afterClip: Boolean,
+    onAfterClip: (Boolean) -> Unit,
+    onOpen: (ClipAnswer, Long) -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Found (tap one, then pick a stream)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            Chip(label = "From clip start", selected = !afterClip, onClick = { onAfterClip(false) })
+            Chip(label = "After the clip", selected = afterClip, onClick = { onAfterClip(true) })
+        }
+        answers.forEach { answer ->
+            val startMs = clipStartMs(answer.candidate, afterClip)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(answer, startMs) }
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(clipAnswerTitle(answer), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(
+                    text = clipAnswerDetail(answer) + ". Plays from ${clipClock(startMs)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+/** YouTube videos whose captions hold the clip; a tap opens the YouTube app at the moment. */
+@Composable
+internal fun ClipYouTubeCard(videos: List<ClipVideoAnswer>, afterClip: Boolean, onOpen: (ClipVideoAnswer, Long) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("On YouTube (tap to open the YouTube app)")
+        videos.forEach { video ->
+            val startMs = clipStartMs(video.candidate, afterClip)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(video, startMs) }
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(clipVideoTitle(video), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(
+                    text = clipMatchDetail(video.candidate) + ". Opens at ${clipClock(startMs)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+/** Shows named by the caption when the clip itself could not be heard; a tap opens the show's page. */
+@Composable
+internal fun ClipShowsCard(shows: List<ShowGuess>, onShow: (ShowGuess) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Open the show and pick the episode")
+        shows.forEach { show ->
+            Text(
+                text = show.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onShow(show) }
+                    .padding(vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The show name typed here is searched with what was already heard: nothing is read or listened to again.
+ * When nothing could be heard ([heard] false) it only finds the show to open.
+ */
+@Composable
+internal fun ClipTypeCard(heard: Boolean, onSearch: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    var name by rememberSaveable { mutableStateOf("") }
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Know the show? Type its name")
+        Text(
+            text = if (heard) "Nuvio searches it with what it already heard. Nothing is listened to again." else "Nuvio finds the show so you can open it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
+        NuvioInputField(
+            value = name,
+            onValueChange = { name = it.take(80) },
+            placeholder = "Show or movie name",
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        NuvioPrimaryButton(text = "Search this show", enabled = name.isNotBlank(), onClick = { onSearch(name) })
+    }
+}
+
+@Composable
+internal fun ClipNotesCard(notes: List<ClipNote>) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Details (for a screenshot if something fails)")
+        notes.forEach { note ->
+            Text("${note.label}: ${note.value}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+
+@Composable
+internal fun ClipLinesCard(lines: List<ClipLine>) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Heard (first lines)")
+        lines.take(6).forEach { line ->
+            Text("${clipClock(line.startMs)}  ${line.text}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+```
+
+##### File: `iosApp/iosApp/ClipFinder/ClipPageReader.swift`
+```swift
+import Foundation
+import UIKit
+import WebKit
+
+struct ClipPageResult {
+    let pageJson: String?
+    let error: String?
+    let cookies: [HTTPCookie]
+    let userAgent: String
+}
+
+/// Loads the shared link in an off-screen web view (the normal iOS web view, nothing faked) and hands
+/// back what the page says about itself as JSON text; Kotlin (ClipPageParser) reads it. Any script that
+/// names "video_url" or "video_versions" (Instagram) is also handed back whole under "raw", whatever its
+/// type, so Kotlin can find the video address in it.
+/// One reader per link. Call it on the main thread only; it answers on the main thread, once.
+final class ClipPageReader {
+    private static let maxPolls = 25
+    private static let script = #"""
+    (function () {
+      var out = { url: location.href, title: document.title || '', metas: {}, videos: [], scripts: [], raw: [] };
+      var known = false;
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') { return ''; }
+      try {
+        var metas = document.querySelectorAll('meta[property], meta[name]');
+        for (var i = 0; i < metas.length; i++) {
+          var key = metas[i].getAttribute('property') || metas[i].getAttribute('name') || '';
+          if (key.indexOf('og:') === 0 || key.indexOf('twitter:') === 0 || key === 'description') {
+            out.metas[key] = metas[i].getAttribute('content') || '';
+          }
+        }
+      } catch (e) {}
+      try {
+        var videos = document.querySelectorAll('video, video source');
+        for (var j = 0; j < videos.length; j++) {
+          var list = [videos[j].currentSrc, videos[j].src];
+          for (var k = 0; k < list.length; k++) {
+            var address = list[k];
+            if (address && address.indexOf('http') === 0 && out.videos.indexOf(address) < 0) {
+              out.videos.push(address);
+              known = true;
+            }
+          }
+        }
+      } catch (e) {}
+      try {
+        var scripts = document.querySelectorAll('script');
+        var total = 0;
+        var rawTotal = 0;
+        for (var s = 0; s < scripts.length; s++) {
+          var type = (scripts[s].type || '').toLowerCase();
+          var id = scripts[s].id || '';
+          var named = id === '__UNIVERSAL_DATA_FOR_REHYDRATION__' || id === 'SIGI_STATE' || id === '__NEXT_DATA__';
+          var text = scripts[s].textContent || '';
+          var media = text.indexOf('video_url') >= 0 || text.indexOf('video_versions') >= 0;
+          if (media && rawTotal + text.length <= 2000000) {
+            rawTotal += text.length;
+            out.raw.push(text);
+            continue;
+          }
+          if (!named && type.indexOf('json') < 0) { continue; }
+          if (text.length < 20 || total + text.length > 3000000) { continue; }
+          total += text.length;
+          out.scripts.push(text);
+          if (named) { known = true; }
+        }
+      } catch (e) {}
+      var state = known ? '1' : (document.readyState === 'complete' ? '2' : '0');
+      return state + JSON.stringify(out);
+    })()
+    """#
+
+    private var webView: WKWebView?
+    private var polls = 0
+    private var lastPayload: String?
+    private var finished = false
+    private var note: ((String, String) -> Void)?
+    private var completion: ((ClipPageResult) -> Void)?
+
+    func read(link: String, note: @escaping (String, String) -> Void, completion: @escaping (ClipPageResult) -> Void) {
+        self.note = note
+        self.completion = completion
+        guard let url = URL(string: link), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            finish(page: nil, error: "This is not a web link.", cookies: [], userAgent: "")
+            return
+        }
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+        let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
+        view.isUserInteractionEnabled = false
+        view.alpha = 0.01
+        if let window = ClipPageReader.keyWindow() {
+            window.insertSubview(view, at: 0)
+        }
+        webView = view
+        view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20))
+        schedulePoll()
+    }
+
+    func cancel() {
+        finished = true
+        completion = nil
+        note = nil
+        closeWebView()
+    }
+
+    private static func keyWindow() -> UIWindow? {
+        var fallback: UIWindow?
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                if window.isKeyWindow { return window }
+                if fallback == nil { fallback = window }
+            }
+        }
+        return fallback
+    }
+
+    private func schedulePoll() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.poll()
+        }
+    }
+
+    private func poll() {
+        guard !finished, let view = webView else { return }
+        polls += 1
+        view.evaluateJavaScript(ClipPageReader.script) { [weak self] value, _ in
+            let text = value as? String
+            DispatchQueue.main.async {
+                self?.handle(text)
+            }
+        }
+    }
+
+    private func handle(_ text: String?) {
+        guard !finished else { return }
+        if let text = text, text.count > 1 {
+            lastPayload = String(text.dropFirst())
+            let state = String(text.prefix(1))
+            if (state == "1" && polls >= 3) || (state == "2" && polls >= 6) {
+                finishWithPage()
+                return
+            }
+        }
+        if polls >= ClipPageReader.maxPolls {
+            finishWithPage()
+            return
+        }
+        schedulePoll()
+    }
+
+    private func finishWithPage() {
+        guard let payload = lastPayload, let view = webView else {
+            note?("Page loaded", "no")
+            finish(page: nil, error: "The page did not load. Check the connection; the site may also have blocked the request.", cookies: [], userAgent: "")
+            return
+        }
+        note?("Page loaded", "yes, after \(polls) s")
+        view.evaluateJavaScript("navigator.userAgent") { [weak self] value, _ in
+            let agent = (value as? String) ?? ""
+            view.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                DispatchQueue.main.async {
+                    self?.finish(page: payload, error: nil, cookies: cookies, userAgent: agent)
+                }
+            }
+        }
+    }
+
+    private func finish(page: String?, error: String?, cookies: [HTTPCookie], userAgent: String) {
+        guard !finished else { return }
+        finished = true
+        let done = completion
+        completion = nil
+        note = nil
+        closeWebView()
+        done?(ClipPageResult(pageJson: page, error: error, cookies: cookies, userAgent: userAgent))
+    }
+
+    private func closeWebView() {
+        webView?.stopLoading()
+        webView?.removeFromSuperview()
+        webView = nil
+    }
+}
+```
+
+#### I. On the phone (after the Mac build), risks, and what the screen shows
+Try it (no new permission prompt):
+1. A clip cut from a YouTube interview or podcast (not a show). Expected: "Done", the YouTube app opens by itself
+   at about the clip's moment; back in Nuvio the YouTube card stays. Details: `YouTube searches`, `YouTube captions`,
+   `YouTube match`, `Timings`.
+2. A show clip that is also on YouTube: episode cards first, YouTube card below, nothing opens by itself.
+3. The Instagram reel that failed: Details `Instagram: page: ... ; embed download: ...` shows each try. Either it
+   listens, or the message offers the show named in the caption; tapping it opens the show's page.
+4. The Modern Family clip: `Fetched while listening: Modern Family: N subtitle files` (if its hashtag scores 90+),
+   `Match: ...`, and `Timings` with `prefetch ... beside`. Compare `subtitles` with the build-3 run.
+5. A saved video from Files, no caption: type the show; "Listening" does not run again (7a's open check).
+Send a screenshot of the whole screen including Details for each.
+
+Top ways it can fail, and what the screen then shows:
+1. `YouTube captions: <id> failed` or `unreadable` for every video: YouTube refused the "ANDROID" player request
+   (the 65% row of decision 5). Fix in Kotlin only: change `ANDROID_CLIENT_VERSION` or the client name to what
+   youtube-transcript-api uses then (check its current source first).
+2. `captions need YouTube's token` for every video: YouTube now asks for a token on all captions; the route is dead
+   until another one is found (Later). Episode search is unaffected.
+3. `YouTube searches: "...": 0` everywhere: the results page shape changed (`ytInitialData` or the consent cookie).
+   Check the HTTP status in the same line first.
+4. The YouTube app does not open (Safari does, or nothing): the universal link was not handed to the app. A tap on
+   the card still opens the video in Safari at the moment.
+5. Instagram: all three tries `video key no`: logged-out reels no longer carry the address anywhere we look; the
+   show offer (decision 9) is what remains. GraphQL route is under Later.
+6. A wrong YouTube video can only appear if its captions share the clip's phrases (the same rule as episodes). If
+   one appears, send its `YouTube match` line.
+
+ASSUMPTIONS (cannot be checked from here)
+- D1 The Kotlin compiles; it uses only what 7a uses plus `io.ktor.http.encodeURLParameter` (Ktor, already a
+  dependency) and the upstream `httpRequestRaw` / `httpPostJsonWithHeaders`.
+- D2 `httpRequestRaw` with `maxResponseBodyBytes = 6 MB` either returns the first 6 MB or throws on a larger answer;
+  a throw is a "failed" line. YouTube results pages were about 1 MB when yt-dlp's tests were written (not measured).
+- D3 The key names and confidences of decisions 5 and 7, read from tool sources, not from live pages.
+- D4 Reading YouTube's pages without its app is, like reading TikTok's (SPEC A2), against the site's terms on paper;
+  nothing is downloaded but captions and pages, nothing is stored but the subtitle cache.
+- D5 `LocalUriHandler.openUri` on iOS hands an https link to `UIApplication.open` (CMP 1.13), so the universal link
+  reaches the YouTube app.
+- D6 The prefetch's extra requests during listening do not slow the clip's own download noticeably (listening
+  starts after the download).
 
 - [ ] **8. Arabic** (after v1 ships; Mo wants it). Speech locale picked from the show's
   language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
@@ -6703,3 +9850,9 @@ ASSUMPTIONS (cannot be checked from here)
 - The new iOS 26 SpeechAnalyzer for listening; more or smarter frame times for the text on screen.
 - A list of past clips. Android. Other languages. Mirrored caption reading.
 - Fold the three older patches and this one into fewer, smaller patches.
+- From 7c-7d (each comes back when the named Details line shows the need): stop listening early once a match is
+  confident (`listen` over half of `total`); a sliding window of 6 subtitle files instead of batches (`subtitles`
+  long with few episodes); reading frames while the clip downloads (`frames` over 3 s); Instagram's GraphQL route
+  (all three `Instagram` tries say `video key no`); another YouTube captions route if every video says `captions
+  need YouTube's token`; YouTube captions in other languages (with milestone 8); split `ClipFinderPipeline.kt`
+  (341 lines) by moving the native `call` into its own file.
