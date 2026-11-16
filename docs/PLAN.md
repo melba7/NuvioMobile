@@ -3070,6 +3070,10 @@ ASSUMPTIONS (cannot be checked from here; each has a visible symptom above)
   - Build: type-the-show fallback (SPEC 7), clear failure messages (SPEC 8), 60 s stage
     limit with a message, tune matcher thresholds on Mo's real clips, add a Clip finder
     section to FORK.md.
+  - Less reliance on the caption (Mo, 2026-11-16; waiting on his pick): (1) try Continue
+    Watching and library shows as candidates first, (2) also use the poster's name and
+    hashtags, (3) type-the-show box when nothing matches, keeping what was heard. Never stop
+    at "no caption". Parked: (4) Apple Vision text on video frames ("Suits S2E5" overlays).
   - Tune the 15% clip-share bar on Mo's real clips. In simulation, correct matches on noisy 6-min clips (45% wrong words) were confident only 72% of the time. Consider measuring share against matchable lines.
   - Done when: every SPEC check passes on the phone.
   - Try it: one clip of each kind: named show, no caption, music only, movie.
