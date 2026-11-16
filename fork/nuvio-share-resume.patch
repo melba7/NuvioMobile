@@ -481,10 +481,10 @@ index 0000000..7d2e672
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 new file mode 100644
-index 0000000..51b8ecb
+index 0000000..391a51c
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
-@@ -0,0 +1,341 @@
+@@ -0,0 +1,345 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -689,7 +689,9 @@ index 0000000..51b8ecb
 +                change { it.copy(youtube = videos) }
 +                return fail(outcome.failure ?: ClipMessages.NO_MATCH)
 +            }
-+            val open = videos.isNotEmpty() && answers.none { it.candidate.confident }
++            // Opens by itself only on a first run (not after a typed name) and only for a strong match.
++            val open = clues.typed.isBlank() && videos.firstOrNull()?.let { it.candidate.confidence >= OPEN_MIN_CONFIDENCE } == true &&
++                answers.none { it.candidate.confident }
 +            change {
 +                it.copy(stage = ClipStage.Done, answers = answers, youtube = videos, openYouTube = open, progress = "")
 +                    .withNote("Timings", timings.line())
@@ -726,7 +728,8 @@ index 0000000..51b8ecb
 +            val tubeFinder = youtube ?: return null
 +            return scope.async {
 +                val started = now()
-+                val found = quietly { withTimeoutOrNull(YOUTUBE_MS) { tubeFinder.collect(clues) { label, value -> note(label, value) } } }.orEmpty()
++                val found = quietly { withTimeoutOrNull(YOUTUBE_MS) { tubeFinder.collect(clues) { label, value -> note(label, value) } } }
++                    ?: emptyList<ClipVideo>().also { note("YouTube", "stopped (time limit or an error)") }
 +                timings.beside("YouTube", now() - started, "${found.size} videos")
 +                found
 +            }
@@ -815,6 +818,7 @@ index 0000000..51b8ecb
 +        const val MAX_SCREEN_LINES = 40
 +        /** YouTube gets this long from its start (it starts before listening for a link). */
 +        const val YOUTUBE_MS = 60_000L
++        const val OPEN_MIN_CONFIDENCE = 0.5
 +        /** Looking for the show to open when the clip cannot be heard. */
 +        const val OFFER_MS = 20_000L
 +        /** A show is offered to open only when a clue names it this clearly (its name in the caption: 85). */
@@ -1991,7 +1995,7 @@ index 0000000..26a3cd3
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPageParser.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPageParser.kt
 new file mode 100644
-index 0000000..68cc315
+index 0000000..0bc46e7
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPageParser.kt
 @@ -0,0 +1,182 @@
@@ -2073,7 +2077,7 @@ index 0000000..68cc315
 +        val metaUrls = videoMetas.mapNotNull { metas?.text(it)?.takeIf(String::isNotBlank) }
 +        val urls = (elementUrls + found.urls + metaUrls)
 +            .map { it.trim() }
-+            .filter { it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true) }
++            .filter { it.startsWith("https://", ignoreCase = true) }
 +            .distinct()
 +            .take(MAX_URLS)
 +        val metaCaption = captionMetas.firstNotNullOfOrNull { metas?.text(it)?.takeIf(String::isNotBlank) } ?: root.text("title")
