@@ -8,3 +8,4 @@
 - Caption tests must copy the shape of real captions (hashtags glued to emoji, "Modern family" half capitalised, filler tags like #movieedit): the tidy made-up captions of milestone 6 passed while the first real one found nothing.
 - Sites blocked in the cloud workspace: read how an open-source tool reads them (`pip download yt-dlp youtube-transcript-api`, read the source, never run it) and write each key's confidence in the plan; the phone's Details lines settle it.
 - "Slow" cannot be fixed without a per-stage timing line in Details: add measurement before speedups, and write each speedup as a hypothesis to confirm.
+- Before planning on a field, check that the source really sends it: OpenSubtitles v3 gives only id, url and lang (no release name) and iOS never computes the video hash, so "same release" ranking had to become "what the player can check".

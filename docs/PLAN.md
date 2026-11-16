@@ -1,5 +1,5 @@
-Done: 7 | Last cleanup: none | Mac builds used: 3 of about 5 (7a on TestFlight from branch clip-finder-share, draft PR #3; works on Mo's phone 2026-11-16)
-Next: 7c + 7d together, tested with ONE Mac build (build 4; see "Milestones 7c-7d implementation notes"), then 7b (build 5). Merge to cmp-rewrite after 7b.
+Done: 7 | Last cleanup: none | Mac builds used: 4 of about 6 (7c-7d on TestFlight from branch clip-finder-share, draft PR #3; Mo's phone check pending)
+Next: Mo's phone check of 7c-7d, then 7e (build 5; see "Milestone 7e implementation notes", after milestone 8), then 7b (build 6). Merge to cmp-rewrite after 7b.
 Phone test 2026-11-16 (Mac build 3): 7a works. Mo then asked for the YouTube video, more speed and accuracy, and an Instagram fix (reel: "Video address found: no").
 
 Waiting on Mo: 1 movie clip with its name and rough time.
@@ -6678,7 +6678,7 @@ ASSUMPTIONS (cannot be checked from here)
   6 catalogs, so the worst case is 48 small requests, once per clip, only when nothing else matched.
 
 
-- [ ] **7b. Fallbacks, tuning, ship** (Mac build 5; as before. Do 7c and 7d below FIRST: 7b tunes with their Match and Timings lines)
+- [ ] **7b. Fallbacks, tuning, ship** (Mac build 6; as before. Do 7c, 7d and 7e below FIRST: 7b tunes with their Match and Timings lines)
   - Build: clear failure messages (SPEC 8), 60 s stage limit with a message, tune matcher thresholds on Mo's
     real clips, flip the default to "After the clip" if Mo still wants SPEC 6 as written, add a Clip finder
     section to FORK.md.
@@ -6726,6 +6726,34 @@ ASSUMPTIONS (cannot be checked from here)
     not, with the Timings lines of Mo's test clips, in docs/LESSONS.md or under "Later".
   - Try it: share the Modern Family clip again and read `Timings`, `Fetched while listening` and `Match`.
   - Files: in the 7c list (ClipTimings, ClipPrefetch, ClipEpisodeRank, ClipShowSearch, pipeline, session).
+
+- [ ] **7e. Pick the show, land on the right moment** (Mac build 5, after Mo's phone check of 7c-7d; notes below)
+  - Why (Mo, 2026-11-16): typing the show should give a list to tap, not a guess; and on some streams playback
+    lands a few seconds off, because the subtitle file the clip was matched with can come from another release
+    than the stream he picks.
+  - Build: (1) under "Know the show?" a pick list fills as Mo types (poster, name, year, Series or Movie), from the
+    catalogs' search plus the titles Nuvio knows, with the squashed-name matching of `ClipNames`; a tap searches
+    exactly that show with what was already heard (no second listen). (2) Play-time check: when a stream opened
+    from a Clip finder answer starts, the subtitle add-ons are asked what the player asks them (file name, size,
+    hash); when they give a file made for this video, the clip's matched lines are found in it (offset, plus the 4%
+    PAL speed difference) and the player seeks there ONCE, never after Mo moved himself. A toast and Details say
+    what happened, e.g. "Moved to the matching line in this video's subtitles (+3.2 s)" or "Kept the clip time: no
+    subtitles for this video". (3) Only in a stream list opened from Clip finder: the best match is pinned on top
+    under "Best match for the clip" and up to 5 streams are tagged "Best match"; the order does not change, and
+    Details says why (`Stream order`). (4) Lead-in 10 s -> 15 s.
+  - Done when: (1) "Fork check" is green, with the new `ClipAlignTest`, `ClipPlayCheckTest`, `ClipStreamRankTest`,
+    `ClipShowPickerTest` and the changed pipeline and state tests; (2) on the phone, typing "modern fam" lists Modern
+    Family with poster and year, and a tap reaches the episode with "Listening" run once; (3) after an answer and a
+    stream, a toast appears within 60 s of playback, Details has `Player` and `Player subtitles` lines, the player
+    jumps at most once, and not at all when Mo seeks first; (4) a stream list opened from a normal show page looks
+    as before; one opened from Clip finder has a `Stream order` line, and a pinned "Best match for the clip" exactly
+    when that line starts "best match"; (5) Details has `Matched subtitle` after every search with an answer.
+  - Try it: share the Modern Family clip; type "modern fam" and tap the show; tap the answer and a stream; read the
+    toast. Then once more, and seek away in the first seconds: nothing may move you back. Screenshot Details each time.
+  - Files: clipfinder/* (6 new, 4 rewritten, 6 edited Kotlin; 4 new test files, 2 edited), upstream
+    `PlayerScreenContent.kt` (1 import + 1 call; new to the patch), `StreamDestination.kt` (already the fork's;
+    3 imports, 1 call, 2 lines changed). No Swift, no new dependency, no new permission.
+  - Wait for OK before starting (20+ files, one more upstream file in the patch).
 
 ### Milestones 7c-7d implementation notes (written 2026-11-16)
 Checked against the work tree as it is on TestFlight (milestones 4-7a applied). Same rules as the 7a notes: paths
@@ -9837,6 +9865,2168 @@ ASSUMPTIONS (cannot be checked from here)
   language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
   (diacritics, letter forms). Test clip: Love Is Blind: Habibi (on Mo's Mac).
 
+### Milestone 7e implementation notes (written 2026-11-16)
+Checked against the work tree as it is on TestFlight (7c-7d, PR #3 head de8c2cd). Same rules as the 7c-7d notes:
+paths are inside `../nuvio-work` unless they start with `fork/` or `docs/`; `K` = `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder`,
+`T` = the same package under `commonTest`. Where these notes differ from older text, these notes win. One Mac build
+(build 5). These notes sit after milestone 8 on purpose: the 7c script reads up to "- [ ] **8." and must still find
+exactly its 20 blocks.
+
+Not checked here: nothing below was compiled or run (no Kotlin or Gradle in the cloud workspace). The alignment
+numbers of `ClipAlignTest` and the release names of `ClipStreamRankTest` were run as a Python copy; every other test
+value was traced by hand. The edit script of section G was run on copies of the 10 files it edits (all 24 texts found
+exactly once). Kotlin errors show in "Fork check".
+
+#### A. Decisions
+1. What the subtitles carry (checked 2026-11-16 in the source of open-source Stremio clients and add-on code read
+   from raw.githubusercontent.com; opensubtitles-v3.strem.io itself answers 403 from the cloud workspace): OpenSubtitles
+   v3, Mo's add-on (SPEC A1), answers `{"subtitles":[{"id","url","lang"}]}`, sometimes with `SubEncoding`, and marks a
+   file found by the video's hash with `"m":"h"`. No release name, no file name, no frame rate (about 80% sure).
+   Nuvio's own reader (`loadAddonSubtitles`) keeps only id, url and lang, and on iOS `computeVideoHash` returns null,
+   so Nuvio never sends a hash it worked out itself; only a hash the stream add-on gives (`behaviorHints.videoHash`)
+   is sent. Clip finder now reads the add-on answers itself (`ClipSubtitleList`): url, language, a release name under
+   any of six common keys, and the hash mark. Details `Matched subtitle` shows on the phone what was really sent;
+   "OpenSubtitles v3: no release name given" is the expected line.
+2. Best-match streams, only in a list opened from Clip finder (`launch.clipStartMs != null`, not a download):
+   - With a release name for the matched file: same source family (web, bluray, hdtv, dvd) 4, same group 3, same
+     resolution family 1; a stream needs 3. That is the "same release" rule Mo asked for.
+   - Without one (the expected case, decision 1), nothing tells which release a stream lines up with, and a guess
+     dressed as "same release" would be dishonest. The honest alternative: prefer the streams whose start the player
+     can check exactly, its own English subtitles 3 (the check reads them, decision 3) and a file hash 2 (the add-ons
+     can find a file by hash, `"m":"h"`); a stream needs 2. `Stream order` then says "own subtitles or a file hash
+     (the matched subtitle has no release name)", or "order unchanged" and why.
+   - The best stream is pinned in the slot a party guest's shared stream uses (`LocalSharedStream`, header "Best match
+     for the clip"; a real party stream still wins) and up to 5 best streams are tagged "Best match" through
+     `LocalStreamHighlight` (the party's own label still wins). Nothing is reordered: a full reorder needs an edit
+     inside `StreamsScreen` (Later). Other stream lists get null and look exactly as before.
+3. The play-time check (`ClipPlayCheck`), the hook and when it may seek:
+   - Data: on a tap, the answer is kept in memory (`ClipPlayTargets.arm`): the episode, up to 12 anchor lines (4+
+     words, from 30 s before to 30 s after the matched span, spread evenly), the matched file's url and release.
+   - Hook: one call after `runtime.BindPlayerRuntimeEffects()` in `PlayerScreenContent.kt`, the narrowest place that
+     sees the args, the position, the player's own first seek and `seekTo`. Everything else is in clipfinder/. It runs
+     only for the player launch whose title, season, episode and start time equal the armed answer, once per launch.
+   - Which file is "this video's": the stream's own English subtitles (http), else the add-ons' English file found by
+     this file's hash, else their first English file when asked with this file's name, size and hash. When that is
+     the file the clip was matched with, the times already agree: no seek. When it is just the add-on's usual first
+     file (the answer without the file's details), the add-on ignored the details: no seek ("the add-ons gave their
+     usual list, not one for this file"). No name, size or hash: "Kept the clip time: no subtitles for this video".
+   - Alignment (`ClipAlign`, pure): each anchor is found in this video's file by the matcher's word triples (a
+     subtitle line split differently still counts); a line found more than 10 s apart is a repeated line and is
+     skipped. Speeds tried: same, 23.976 frames a second played at 25 (4.3% faster) and back; the speed with the most pairs within
+     2.5 s of each other wins, the same speed wins a tie; at least 2 pairs and half of all. The new time is the
+     median of what the pairs say. Seek only when the shift is 1 s to 5 min.
+   - Seeking: it waits until the player has done its own first seek, is not loading, plays the stream it opened and
+     is near the clip time (3 s before to 20 s after). Then it seeks once. A jump of more than 3 s back, or forward
+     more than twice the time passed plus 3 s (hold-to-speed plays at 2x), before that moment means Mo moved: no
+     seek. After 60 s it gives up. Every outcome is a 4 s toast plus `Player` and `Player subtitles` in Details.
+4. Lead-in 15 s (was 10 s): releases differ by a few seconds and sometimes 5-10 s (SPEC A3); with 10 s, a video whose
+   lines come 8 s earlier than in the matched file started 2 s before the line, too little to catch the scene; the first line heard is often a
+   moment into the scene; 15 s still puts the scene on screen within SPEC 5's 20 s, and more makes Mo wait. Where the
+   check works it moves to the same 15 s before the matching line, so the two do not add up.
+5. Pick list (`ClipShowPicker`): from 2 letters, 350 ms after the last key (the effect restarts on each key, so an
+   older ask is cancelled), known titles (shows of earlier clips, popular catalog titles, fetched once per app start)
+   scored with `ClipNames.typedScore`, plus up to 8 results of `clipSearchShows` (the finder's own search) scored
+   `max(typedScore, 80 - rank)` as in `ClipShowFinder`; one entry per id, the catalog's (poster, year) kept; 8 shown.
+   A tap runs `searchTyped(name, show)`: `ClipClues.picked` makes `ClipShowFinder` return that show alone (score 110,
+   "picked"), so nothing else is searched. After a clip that could not be heard a tap opens the show (as before).
+   The button "Search this show" stays for when the catalogs do not answer.
+6. Honest Details: `Matched subtitle` says "<add-on>: <release or no release name given>", or "from an earlier run's
+   cache (add-on and release not known)" for cues cached before 7e (no record line); the cache now starts with one
+   line `R<TAB>url<TAB>release<TAB>add-on`, which the old cue reader skips. A new typed search clears `Matched
+   subtitle`, `Stream order`, `Player` and `Player subtitles`.
+
+#### B. Contract
+No Swift, no `ClipFinderNative.kt` change (still 17 functions). Upstream calls added: `addonSubtitleRequests` with
+`extras` and `fetchAddonResponseText` (both internal, same module) instead of `loadAddonSubtitles`;
+`PlayerScreenRuntime` fields `playbackSnapshot`, `initialSeekApplied`, `activeSourceUrl`, `playerController`;
+`PlayerScreenArgs.launchId/parentMetaId/seasonNumber/episodeNumber/initialPositionMs/subtitleExtras/externalSubtitles`;
+`LocalSharedStream`, `LocalStreamHighlight`, `SharedStream`. New Details lines: `Matched subtitle`, `Stream order`,
+`Player`, `Player subtitles`.
+
+#### C. Files
+| Worker | File | What |
+|---|---|---|
+| 1 | new `K/ClipAlign.kt`, `T/ClipAlignTest.kt` | anchors, pairs, speeds, median (decision 3) |
+| 1 | new `K/ClipPlayCheck.kt`, `T/ClipPlayCheckTest.kt` | `ClipPlayTarget(s)`, `ClipSeekWatch`, file choice, decide, notes |
+| 1 | new `K/ClipSubtitleList.kt`, new `K/ClipStreamRank.kt`, `T/ClipStreamRankTest.kt` | add-on answer reader; release names and ranking (decisions 1, 2) |
+| 1 | new `K/ClipShowPicker.kt`, `T/ClipShowPickerTest.kt` | pick list, `clipYear`, `clipPickDetail` (decision 5) |
+| 1 | edited `ShowGuesser.kt`, `ClipNames.kt`, `ClipShowFinder.kt`, `EpisodeSubtitleSource.kt`, `ClipFinderState.kt`, `T/ClipFinderStateTest.kt` | section G "models" |
+| 2 | rewritten `K/ClipShowSearch.kt` | answers carry episode, anchors, file; `Matched subtitle` |
+| 2 | rewritten `K/ClipFinderSession.kt` | `searchTyped(name, picked)`, `pickShows`, `note`, year, `clipListSubtitles` with extras |
+| 2 | rewritten `K/ClipFinderScreen.kt`, `K/ClipFinderParts.kt` | arm on tap; pick list in the type card |
+| 2 | new `K/ClipPlayerHooks.kt` | the player and stream-list hooks |
+| 2 | edited `ClipFinderPipeline.kt`, `T/ClipFinderPipelineTest.kt`, upstream `PlayerScreenContent.kt`, `StreamDestination.kt` | section G "pipeline", "tests", "player", "streams" |
+
+14 blocks in section H. Every new or rewritten file is under 300 lines; `ClipFinderPipeline.kt` grows from 345 to 347
+(already under Later).
+
+#### D. Steps, one worker after the other in the same work tree
+Never hand-type the files. This script copies the "File:" blocks of THIS section only (from its header to
+"## Later"). Paste as it stands:
+```bash
+cat > /tmp/clip7e_files.py <<'PY'
+import re, sys, os
+mode, plan, tree = sys.argv[1], sys.argv[2], sys.argv[3].rstrip("/")
+only = sys.argv[4:]                                    # optional: path fragments to limit to
+text = open(plan, encoding="utf-8").read()
+text = text[text.index("### Milestone 7e implementation notes"):text.index("\n## Later")]
+blocks = re.findall(r"^##### File: `([^`]+)`\n```[a-z]*\n(.*?)\n```$", text, re.M | re.S)
+assert len(blocks) == 14, "expected 14 file blocks, found %d" % len(blocks)
+bad = 0
+for path, body in blocks:
+    if only and not any(o in path for o in only): continue
+    full, body = os.path.join(tree, path), body + "\n"
+    if mode == "write":
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        open(full, "w", encoding="utf-8").write(body)
+        print("wrote", path)
+    elif not os.path.exists(full) or open(full, encoding="utf-8").read() != body:
+        bad += 1; print("DIFFERENT", path)
+if mode == "check": print("all files match the plan" if not bad else "%d files differ" % bad); sys.exit(1 if bad else 0)
+PY
+```
+0. Everyone: `fork/dev-tree.sh` (the work tree must hold 7c-7d: `grep -c "Fetched while listening" ../nuvio-work/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/*.kt | grep -v ":0"`
+   lists at least one file), save the two scripts (this one and `/tmp/clip7e_edits.py` of section G), and
+   `git -C ../nuvio-work status --porcelain > /tmp/clip7e_before.txt`.
+1. Worker 1 (pure logic, models, tests): `python3 /tmp/clip7e_files.py write docs/PLAN.md ../nuvio-work ClipAlign ClipPlayCheck ClipSubtitleList ClipStreamRank ClipShowPicker`
+   (9 files: each name also matches its test), then `python3 /tmp/clip7e_edits.py ../nuvio-work models`. Read the
+   five Kotlin files against decisions 1-5 and follow each `assertEquals` of the four test files by hand once. Report
+   any value you cannot reproduce; do not "fix" a test. The tree does not compile between worker 1 and worker 2
+   (`ClipShowSearch` and the session still use the old shapes): fine.
+2. Worker 2 (glue, screen, hooks): `python3 /tmp/clip7e_files.py write docs/PLAN.md ../nuvio-work ClipShowSearch ClipFinderSession ClipFinderScreen ClipFinderParts ClipPlayerHooks`
+   (5 files), then `python3 /tmp/clip7e_edits.py ../nuvio-work pipeline tests player streams`. Then run the
+   pre-flight (F) and `fork/dev-tree.sh save`.
+3. Lead: commit `fork/nuvio-share-resume.patch` + docs, push, wait for "Fork check". Kotlin errors are fixed in the
+   work tree (then save again); a test is never weakened: if a traced value was wrong, find out which side is wrong
+   first. Then `gh workflow run TestFlight --ref clip-finder-share` (one Mac build, about 70 min).
+4. When green on the phone: tick 7e; `docs/ARCHITECTURE.md`: data flow gets "play-time check: the add-ons' file for
+   this video, the clip's lines found in it, one seek"; decisions log: "Lead-in 15 s", "Re-anchor at play time with
+   the matched lines, once, never after Mo seeks", "Best match by release name when the add-on sends one, else by
+   what the player can check (OpenSubtitles v3 sends no release name)", "Pick list from search plus known titles".
+
+#### E. Tests (all four new test files are given in full in section H; all data made up)
+- `ClipAlignTest` (6): anchors (12 of 24 lines with 4+ words, 72 s to 168 s, a 2-word line left out; 9 near the
+  start); offset (a release 3.2 s later: 12 pairs, same speed, 85 s -> 88.2 s); speed (lines 60-280 s, PAL speed and
+  5 s later: PAL wins with 12 pairs, 45 s -> 48.157 s); a short span keeps the same speed; other words give null;
+  a repeated line far away is skipped, an echo 1 s later counts once (earliest), and 2 anchors with 1 repeated give null.
+- `ClipPlayCheckTest` (9, virtual time): one seek to 88.2 s after the player reached the clip time, note
+  "+3.2 s", detail "Sample Subs: picked for this file (release: none given)", both lists asked; Mo moves first:
+  no seek; own subtitles 0.4 s off: "agree (+0.4 s)", no seek; no file details: no download, no seek; the matched
+  file comes back: "are the file Nuvio matched with"; other words: "not in this video's subtitles"; the player never
+  arrives: given up after 60 s; the file choice rules one by one; signed seconds, speed note, a 6:40 shift refused;
+  `ClipPlayTargets` once per launch and only for its own launch.
+- `ClipStreamRankTest` (7): release names (web/GRP/hd, bluray, hdtv/XYZ, DDP5.1 H.264-GRP, 4K, digits only, empty);
+  ranking with a release name (the same release pinned and alone tagged; without it, same source family and
+  resolution next), no stream of that release (order unchanged), without a release name (own subtitles first, two
+  tagged, hash next, French or file:// subtitles do not count, none: unchanged), at most 5 tagged; the add-on answer
+  reader (hash mark, `releaseName`, entry without url, not an object, not JSON); the cache's file record (tab taken
+  out, cues still read, older entries give null).
+- `ClipShowPickerTest` (6): "modernfam" gives the known show with the catalog's poster and year, then a search
+  result; fewer than 2 letters ask nothing; a failing search or failing known list still lists the other; at most 8,
+  stable order; a picked show is the finder's only suspect with no search; year and kind text.
+- Changed (section G, nothing removed): `ClipFinderPipelineTest` labels gain `"Matched subtitle"` after
+  `"Candidates"`; new test "a show picked in the list is searched alone, and the answer carries what the player
+  checks" (no new search, listened once, episode `tt001:2:5`, 1-12 anchors within 30 s of the match, file url,
+  `add-on: no release name given`). `ClipFinderStateTest`: the lead-in test expects 235 000 (250 000 - 15 000).
+`ClipFinderPipelineWebTest`, `EpisodeSubtitleSourceTest`, `ClipShowFinderTest` and the rest stay green unchanged
+(traced: new constructor parameters all come last with defaults; `runTyped(last, name) { }` still compiles with
+`picked` defaulted; the old cue reader skips the record line).
+
+#### F. Pre-flight before pushing
+```bash
+W=../nuvio-work; K=$W/composeApp/src/commonMain/kotlin/com/nuvio/app
+python3 /tmp/clip7e_files.py check docs/PLAN.md $W                    # all files match the plan
+git -C $W status --porcelain | diff /tmp/clip7e_before.txt -            # exactly one line: > M .../features/player/PlayerScreenContent.kt
+grep -c "ClipPlayerCheck(" $K/features/player/PlayerScreenContent.kt    # 1
+grep -c "clipPick" $K/StreamDestination.kt                              # 3
+grep -rn "Dispatchers.IO\|AIza\|api[_-]key" $K/features/clipfinder/     # prints nothing
+wc -l $K/features/clipfinder/*.kt | awk '$1 > 300 && $2 != "total"'     # only ClipFinderPipeline.kt
+python3 - $K <<'PY'                                                   # the bridge is unchanged
+import re, sys
+k = open(sys.argv[1] + "/features/clipfinder/ClipFinderNative.kt").read()
+assert len(re.findall(r"^\s*fun ", k, re.M)) == 17, "ClipFinderNative.kt must still declare exactly 17 functions"
+print("contract OK")
+PY
+fork/dev-tree.sh save
+```
+What each check proves: Fork check = all Kotlin compiles and the tests pass; nothing about the live add-ons or the
+player. Mac build = the app builds. Phone = section I.
+
+#### G. Edits to existing files
+Run after writing the files. Exact replacements; the script stops if a text is not found exactly once:
+```bash
+cat > /tmp/clip7e_edits.py <<'PY'
+import sys, os
+tree, parts = sys.argv[1].rstrip("/"), set(sys.argv[2:])
+A = "composeApp/src/commonMain/kotlin/com/nuvio/app"
+K = A + "/features/clipfinder"
+T = "composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder"
+picked_test = '''    @Test
+    fun `a show picked in the list is searched alone, and the answer carries what the player checks`() = runTest {
+        val fake = FakeNative(lines = clipLines)
+        val asked = mutableListOf<String>()
+        val h = Harness(fake, search = { query -> asked += query; emptyList() })
+        h.run("file:///x/clip.mp4")
+        assertFailed(h, ClipStage.Searching, ClipMessages.NO_SHOW, fileHint = false)
+        val searches = asked.size
+        h.picked(ShowGuess("tt001", "series", "Made Up Show (picked)"))
+        assertEquals(ClipStage.Done, h.last.stage)
+        val top = h.last.answers.first()
+        assertEquals("Made Up Show (picked)", top.show.name)
+        assertEquals(searches, asked.size)
+        assertEquals(1, fake.listenCalls)
+        assertEquals("tt001:2:5", top.episode?.subtitleId)
+        assertTrue(top.anchors.isNotEmpty() && top.anchors.size <= ClipAlign.MAX_ANCHORS)
+        assertTrue(top.anchors.all { it.startTimeMs in (top.candidate.startMs - 30_000)..(top.candidate.endMs + 30_000) })
+        assertEquals("https://subs.example.test/tt001:2:5.srt", top.subtitle?.url)
+        assertEquals("add-on: no release name given", h.last.notes.first { it.label == "Matched subtitle" }.value)
+    }
+
+'''
+edits = {
+  "models": [
+    (K + "/ShowGuesser.kt",
+     "data class ShowGuess(val metaId: String, val type: String, val name: String, val poster: String? = null)",
+     "data class ShowGuess(val metaId: String, val type: String, val name: String, val poster: String? = null, val year: String? = null)"),
+    (K + "/ClipNames.kt",
+     "    val typed: String = \"\",\n",
+     "    val typed: String = \"\",\n    /** The show tapped in the pick list under \"Know the show?\": searched alone. */\n    val picked: ShowGuess? = null,\n"),
+    (K + "/ClipShowFinder.kt",
+     "    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, onNote: (String, String) -> Unit): List<ClipSuspect> {\n",
+     "    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, onNote: (String, String) -> Unit): List<ClipSuspect> {\n"
+     "        // Mo tapped the show in the pick list: no clue can know better.\n"
+     "        clues.picked?.let { return listOf(ClipSuspect(it, PICKED_SCORE, \"picked\")) }\n"),
+    (K + "/ClipShowFinder.kt",
+     "        const val MAX_SHOWS = ClipNameCheck.MAX_SUSPECTS\n",
+     "        const val MAX_SHOWS = ClipNameCheck.MAX_SUSPECTS\n        /** A show tapped in the pick list. */\n        const val PICKED_SCORE = 110\n"),
+    (K + "/EpisodeSubtitleSource.kt",
+     "data class ClipSubtitleLink(val url: String, val language: String)",
+     "/**\n * One subtitle file an add-on lists. [source]: the add-on's name; [release]: its release name, when the add-on sends\n"
+     " * one ([ClipSubtitleList]); [hashMatch]: the add-on found it by the video file's hash.\n */\n"
+     "data class ClipSubtitleLink(\n    val url: String,\n    val language: String,\n    val source: String = \"\",\n"
+     "    val release: String = \"\",\n    val hashMatch: Boolean = false,\n)"),
+    (K + "/EpisodeSubtitleSource.kt",
+     "runCatching { cache.write(key, encodeCues(cues)) }",
+     "runCatching { cache.write(key, linkLine(link) + encodeCues(cues)) }"),
+    (K + "/EpisodeSubtitleSource.kt",
+     "    /** Null on a time-out or any failure; cancelling the search still cancels. */\n",
+     "    /** The file an episode's cached cues came from; null for cues cached before 7e. */\n"
+     "    fun usedLink(showId: String, videoId: String): ClipSubtitleLink? =\n"
+     "        runCatching { cache.read(\"$showId/$videoId\") }.getOrNull()?.let { decodeLink(it) }\n\n"
+     "    /** Null on a time-out or any failure; cancelling the search still cancels. */\n"),
+    (K + "/EpisodeSubtitleSource.kt",
+     "        }.toList()\n",
+     "        }.toList()\n\n"
+     "        /** The first line of a cache entry: R, url, release, add-on (tabs taken out). [decodeCues] skips it. */\n"
+     "        fun linkLine(link: ClipSubtitleLink): String =\n"
+     "            listOf(\"R\", link.url, link.release, link.source).joinToString(\"\\t\") { it.replace('\\t', ' ').replace('\\n', ' ') } + \"\\n\"\n\n"
+     "        fun decodeLink(text: String): ClipSubtitleLink? {\n"
+     "            val parts = text.lineSequence().firstOrNull()?.split('\\t') ?: return null\n"
+     "            if (parts.size < 4 || parts[0] != \"R\" || parts[1].isBlank()) return null\n"
+     "            return ClipSubtitleLink(parts[1], \"eng\", source = parts[3], release = parts[2])\n"
+     "        }\n"),
+    (K + "/ClipFinderState.kt",
+     "import kotlin.math.roundToInt\n",
+     "import com.nuvio.app.features.player.SubtitleSyncCue\nimport kotlin.math.roundToInt\n"),
+    (K + "/ClipFinderState.kt",
+     "    val thumbnail: String? = null,\n)\n\ndata class ClipFinderState(",
+     "    val thumbnail: String? = null,\n"
+     "    /** The episode the answer is in; the player's check asks the subtitle add-ons for it ([ClipPlayCheck]). */\n"
+     "    val episode: ClipEpisode? = null,\n"
+     "    /** Up to 12 lines around the match, from the file it was matched with ([ClipAlign.anchors]). */\n"
+     "    val anchors: List<SubtitleSyncCue> = emptyList(),\n"
+     "    /** That file; null when its cues came from an older cache. */\n"
+     "    val subtitle: ClipSubtitleLink? = null,\n)\n\ndata class ClipFinderState("),
+    (K + "/ClipFinderState.kt",
+     "internal const val CLIP_LEAD_IN_MS = 10_000L\n",
+     "/**\n * Playback starts this long before the matched moment. Releases differ by a few seconds, sometimes 5-10, and the\n"
+     " * first line heard is often a moment into the scene; 15 s still shows the scene within SPEC 5's 20 s. Where this\n"
+     " * video's subtitles allow it, the player's check ([ClipPlayCheck]) moves to the matching line, keeping the 15 s.\n */\n"
+     "internal const val CLIP_LEAD_IN_MS = 15_000L\n"),
+    (K + "/ClipFinderState.kt",
+     "/** Where playback starts: 10 s before the matched moment, or right after it. */",
+     "/** Where playback starts: 15 s before the matched moment, or right after it. */"),
+    (T + "/ClipFinderStateTest.kt",
+     "    fun `playback starts ten seconds before the moment or right after it`() {\n        val found = candidate(250_000, 400_000)\n        assertEquals(240_000L,",
+     "    fun `playback starts fifteen seconds before the moment or right after it`() {\n        val found = candidate(250_000, 400_000)\n        assertEquals(235_000L,"),
+  ],
+  "pipeline": [
+    (K + "/ClipFinderPipeline.kt",
+     "     * YouTube answers found before stay. After a clip that could not be heard it only finds the show.\n     */\n"
+     "    suspend fun runTyped(previous: ClipFinderState, typed: String, emit: (ClipFinderState) -> Unit) {",
+     "     * YouTube answers found before stay. After a clip that could not be heard it only finds the show.\n"
+     "     * [picked]: the show tapped in the pick list; then only that show is searched.\n     */\n"
+     "    suspend fun runTyped(previous: ClipFinderState, typed: String, picked: ShowGuess? = null, emit: (ClipFinderState) -> Unit) {"),
+    (K + "/ClipFinderPipeline.kt",
+     "            clues = previous.clues.copy(typed = typed.trim().take(MAX_TYPED)),",
+     "            clues = previous.clues.copy(typed = typed.trim().take(MAX_TYPED), picked = picked),"),
+    (K + "/ClipFinderPipeline.kt",
+     "            \"Match\", \"Candidates\", \"Show from the caption\", \"Timings\",\n",
+     "            \"Match\", \"Candidates\", \"Matched subtitle\", \"Show from the caption\", \"Timings\", \"Stream order\", \"Player\",\n"
+     "            \"Player subtitles\",\n"),
+  ],
+  "tests": [
+    (T + "/ClipFinderPipelineTest.kt",
+     "\"Known titles\", \"Searches\", \"Show guesses\", \"Subtitles\", \"Match\", \"Candidates\", \"Timings\",",
+     "\"Known titles\", \"Searches\", \"Show guesses\", \"Subtitles\", \"Match\", \"Candidates\", \"Matched subtitle\", \"Timings\","),
+    (T + "/ClipFinderPipelineTest.kt",
+     "        suspend fun typed(name: String) = pipeline().runTyped(last, name) { states += it }\n",
+     "        suspend fun typed(name: String) = pipeline().runTyped(last, name) { states += it }\n\n"
+     "        suspend fun picked(show: ShowGuess) = pipeline().runTyped(last, show.name, show) { states += it }\n"),
+    (T + "/ClipFinderPipelineTest.kt",
+     "    @Test\n    fun `no bridge`() = runTest {\n",
+     picked_test + "    @Test\n    fun `no bridge`() = runTest {\n"),
+  ],
+  "player": [
+    (A + "/features/player/PlayerScreenContent.kt",
+     "import com.nuvio.app.core.ui.LocalFold\n",
+     "import com.nuvio.app.core.ui.LocalFold\nimport com.nuvio.app.features.clipfinder.ClipPlayerCheck\n"),
+    (A + "/features/player/PlayerScreenContent.kt",
+     "        runtime.BindPlayerRuntimeEffects()\n",
+     "        runtime.BindPlayerRuntimeEffects()\n"
+     "        ClipPlayerCheck(\n"
+     "            args,\n"
+     "            position = { runtime.playbackSnapshot.positionMs },\n"
+     "            ready = { runtime.initialSeekApplied && !runtime.playbackSnapshot.isLoading && runtime.activeSourceUrl == args.sourceUrl },\n"
+     "        ) { runtime.playerController?.seekTo(it) }\n"),
+  ],
+  "streams": [
+    (A + "/StreamDestination.kt",
+     "import com.nuvio.app.features.streams.LocalStreamHighlight\n",
+     "import com.nuvio.app.features.streams.LocalStreamHighlight\n"
+     "import com.nuvio.app.features.clipfinder.clipPinned\n"
+     "import com.nuvio.app.features.clipfinder.rememberClipHighlight\n"
+     "import com.nuvio.app.features.clipfinder.rememberClipStreamPick\n"),
+    (A + "/StreamDestination.kt",
+     "            ?.let { SharedStream(label = sharedLabel, stream = it.toStreamItem()) }\n    }\n",
+     "            ?.let { SharedStream(label = sharedLabel, stream = it.toStreamItem()) }\n    }\n"
+     "    val clipPick = rememberClipStreamPick(\n"
+     "        fromClip = launch.clipStartMs != null && !launch.downloadIntent,\n"
+     "        groups = streamsUiState.takeIf { it.requestToken == expectedStreamsRequestToken }?.groups.orEmpty(),\n"
+     "    )\n"),
+    (A + "/StreamDestination.kt",
+     "            LocalStreamHighlight provides streamHighlight,\n            LocalSharedStream provides sharedStream,\n",
+     "            LocalStreamHighlight provides rememberClipHighlight(clipPick, streamHighlight),\n"
+     "            LocalSharedStream provides (sharedStream ?: clipPinned(clipPick)),\n"),
+  ],
+}
+for part in sorted(parts):
+    for path, old, new in edits[part]:
+        full = os.path.join(tree, path)
+        text = open(full, encoding="utf-8").read()
+        assert text.count(old) == 1, "%s: expected the old text once, found %d" % (path, text.count(old))
+        open(full, "w", encoding="utf-8").write(text.replace(old, new))
+        print("edited", path)
+PY
+```
+Upstream files: `PlayerScreenContent.kt` gets one import and one call right after `runtime.BindPlayerRuntimeEffects()`
+(nothing reformatted; the call does nothing unless the player was opened from a Clip finder answer).
+`StreamDestination.kt` is already the fork's (it passes the clip start): 3 imports, one `val clipPick`, and the two
+provider lines wrap the party values (party first, so a party behaves exactly as before). `ClipFinderStateTest` and
+`ClipFinderPipelineTest` are the fork's own tests.
+
+#### H. The files
+Write them with the script of section D. The block header is the path inside the work tree.
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipAlign.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleSyncCue
+import kotlin.math.abs
+import kotlin.math.roundToLong
+
+/**
+ * Lines up two subtitle files of one episode: the file the clip was matched with, and a file made for the
+ * video Mo plays, which may come from another release (a recap more or less, other cuts, ads, or 25 instead
+ * of 23.976 frames a second). Lines are compared with [ClipText]'s words, like the matcher. Pure, no network.
+ */
+object ClipAlign {
+    /** Lines shorter than this ("Yeah.", "What?") are said everywhere and are not used. */
+    const val MIN_WORDS = 4
+    const val MAX_ANCHORS = 12
+    /** Anchors are taken from this long before the matched span to this long after it. */
+    const val AROUND_MS = 30_000L
+    /** Pairs whose offsets differ by at most this much agree with each other. */
+    const val AGREE_MS = 2_500L
+    /** A line found at places further apart than this is a repeated line ("previously on", a catch phrase): skipped. */
+    const val SAME_PLACE_MS = 10_000L
+    const val MIN_PAIRS = 2
+    /** Speeds tried, same speed first: 23.976 played at 25 frames a second (the PAL speed-up, about 4%), and back. */
+    val RATIOS = listOf(1.0, 23.976 / 25.0, 25.0 / 23.976)
+
+    /** One line found in both files (a pair): its time in the matched file and in the video's file. */
+    data class Hit(val anchorMs: Long, val targetMs: Long)
+
+    /** The pairs that agree on one offset at one speed. [ratio] is video time per matched-file time. */
+    data class Alignment(val pairs: List<Hit>, val ratio: Double) {
+        /** A time of the matched file as a time of the video: the middle of what each agreeing pair says. */
+        fun map(timeMs: Long): Long {
+            val guesses = pairs.map { it.targetMs + ((timeMs - it.anchorMs) * ratio).roundToLong() }.sorted()
+            return guesses[(guesses.size - 1) / 2]
+        }
+    }
+
+    /** Up to 12 cues of 4+ words from 30 s before the matched span to 30 s after it, spread evenly over it. */
+    fun anchors(cues: List<SubtitleSyncCue>, startMs: Long, endMs: Long): List<SubtitleSyncCue> {
+        val near = cues.filter {
+            it.startTimeMs in (startMs - AROUND_MS)..(endMs + AROUND_MS) && ClipText.normalize(it.text).size >= MIN_WORDS
+        }
+        if (near.size <= MAX_ANCHORS) return near
+        return List(MAX_ANCHORS) { near[it * (near.size - 1) / (MAX_ANCHORS - 1)] }
+    }
+
+    /**
+     * Where the [anchors] are in [target], or null when fewer than 2 lines are found or they do not agree.
+     * The speed that lets the most pairs agree wins; on a tie the same speed wins (short clips cannot tell).
+     */
+    fun align(anchors: List<SubtitleSyncCue>, target: List<SubtitleSyncCue>): Alignment? {
+        val found = pairs(anchors, target)
+        if (found.size < MIN_PAIRS) return null
+        var best: Alignment? = null
+        for (ratio in RATIOS) {
+            val agreeing = agreeing(found, ratio)
+            val enough = agreeing.size >= MIN_PAIRS && agreeing.size * 2 >= found.size
+            if (enough && (best == null || agreeing.size > best.pairs.size)) best = Alignment(agreeing, ratio)
+        }
+        return best
+    }
+
+    /**
+     * Each anchor's place in [target]: the cue holding most of the anchor's word triples (at least half, and 2),
+     * counting triples that run on into the next cue, since releases split lines differently. An anchor whose
+     * best cues are more than 10 s apart is a repeated line and is skipped; close copies give the earliest.
+     */
+    fun pairs(anchors: List<SubtitleSyncCue>, target: List<SubtitleSyncCue>): List<Hit> {
+        val words = target.map { ClipText.normalize(it.text) }
+        val cuesOf = HashMap<String, MutableSet<Int>>()
+        for (index in target.indices) {
+            val run = words[index] + words.getOrElse(index + 1) { emptyList() }.take(2)
+            for (triple in ClipText.triples(run)) cuesOf.getOrPut(triple) { mutableSetOf() } += index
+        }
+        return anchors.mapNotNull { anchor ->
+            val triples = ClipText.triples(ClipText.normalize(anchor.text)).toSet()
+            val votes = HashMap<Int, Int>()
+            for (triple in triples) for (index in cuesOf[triple].orEmpty()) votes[index] = (votes[index] ?: 0) + 1
+            val best = votes.values.maxOrNull() ?: return@mapNotNull null
+            if (best < 2 || best * 2 < triples.size) return@mapNotNull null
+            val times = votes.filterValues { it == best }.keys.map { target[it].startTimeMs }
+            if (times.max() - times.min() > SAME_PLACE_MS) return@mapNotNull null
+            Hit(anchor.startTimeMs, times.min())
+        }
+    }
+
+    /** The pairs within 2.5 s of the middle offset, at [ratio]. */
+    private fun agreeing(pairs: List<Hit>, ratio: Double): List<Hit> {
+        fun offset(pair: Hit): Long = pair.targetMs - (pair.anchorMs * ratio).roundToLong()
+        val offsets = pairs.map(::offset).sorted()
+        val middle = offsets[(offsets.size - 1) / 2]
+        return pairs.filter { abs(offset(it) - middle) <= AGREE_MS }
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheck.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.PlayerSubtitleCueParser
+import com.nuvio.app.features.player.SubtitleRequestExtras
+import com.nuvio.app.features.player.SubtitleSyncCue
+import com.nuvio.app.features.streams.StreamSubtitle
+import kotlin.coroutines.CoroutineContext
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** A Clip finder answer as the player needs it. Times are times of the subtitle file the clip was matched with. */
+data class ClipPlayTarget(
+    val metaId: String,
+    val season: Int?,
+    val episode: Int?,
+    val type: String,
+    val subtitleId: String,
+    val startMs: Long,
+    val anchors: List<SubtitleSyncCue>,
+    /** The file the clip was matched with; "" when its cues came from an older cache. */
+    val matchedUrl: String,
+    /** Its release name; "" when the add-on gives none. */
+    val release: String,
+)
+
+/** The answer tapped last, in memory only. The stream list and the player look it up. */
+object ClipPlayTargets {
+    private var target: ClipPlayTarget? = null
+    private val checked = mutableSetOf<Long>()
+
+    fun arm(answer: ClipAnswer, startMs: Long) {
+        target = ClipPlayTarget(
+            metaId = answer.show.metaId,
+            season = answer.candidate.season,
+            episode = answer.candidate.episode,
+            type = answer.episode?.type ?: answer.show.type,
+            subtitleId = answer.episode?.subtitleId ?: answer.candidate.videoId,
+            startMs = startMs,
+            anchors = answer.anchors,
+            matchedUrl = answer.subtitle?.url.orEmpty(),
+            release = answer.subtitle?.release.orEmpty(),
+        )
+    }
+
+    fun current(): ClipPlayTarget? = target
+
+    /** The target when this player was started from it (same title, episode and start time); once per player launch. */
+    fun forPlayer(launchId: Long?, metaId: String, season: Int?, episode: Int?, startMs: Long): ClipPlayTarget? {
+        val armed = target ?: return null
+        if (launchId == null || launchId in checked) return null
+        if (armed.metaId != metaId || armed.season != season || armed.episode != episode || armed.startMs != startMs) return null
+        checked += launchId
+        return armed
+    }
+}
+
+/** Where to seek (null: stay), the note for the screen and Details, and which subtitles were used ([detail]). */
+data class ClipPlayPlan(val seekToMs: Long?, val note: String, val detail: String = "")
+
+/**
+ * Sees whether Mo moved himself after the player reached the clip time: a jump of more than 3 s backwards, or
+ * forwards beyond twice the time passed (hold-to-speed plays at 2x) plus 3 s.
+ */
+class ClipSeekWatch(private val startMs: Long) {
+    var landed = false
+        private set
+    var moved = false
+        private set
+    private var lastPositionMs = 0L
+    private var lastWallMs = 0L
+
+    fun sample(positionMs: Long, wallMs: Long) {
+        if (moved) return
+        if (!landed) {
+            if (positionMs in (startMs - LAND_BEFORE_MS)..(startMs + LAND_AFTER_MS)) {
+                landed = true
+                lastPositionMs = positionMs
+                lastWallMs = wallMs
+            }
+            return
+        }
+        val passed = maxOf(0L, wallMs - lastWallMs)
+        if (positionMs > lastPositionMs + 2 * passed + JUMP_MS || positionMs < lastPositionMs - JUMP_MS) moved = true
+        lastPositionMs = positionMs
+        lastWallMs = wallMs
+    }
+
+    companion object {
+        const val LAND_BEFORE_MS = 3_000L
+        const val LAND_AFTER_MS = 20_000L
+        const val JUMP_MS = 3_000L
+    }
+}
+
+/**
+ * The play-time check of a stream opened from Clip finder. The subtitle file the clip was matched with may come
+ * from another release than the video, so the time can be off. While the player starts, the subtitle add-ons are
+ * asked what the player asks them (with this stream's file name, size and hash); when they give a file made for
+ * this video, the clip's lines are found in it ([ClipAlign]) and the player is moved there, once, and never
+ * after Mo moved himself. Otherwise the clip time stays and the note says why.
+ */
+class ClipPlayCheck(
+    private val listSubtitles: suspend (type: String, subtitleId: String, extras: SubtitleRequestExtras?) -> List<ClipSubtitleLink>,
+    private val download: suspend (url: String) -> String,
+    private val now: () -> Long,
+    private val work: CoroutineContext = Dispatchers.Default,
+) {
+    /** Waits until the player is at the clip time and the plan is ready, then seeks at most once. */
+    suspend fun run(
+        target: ClipPlayTarget,
+        extras: SubtitleRequestExtras?,
+        own: List<StreamSubtitle>,
+        position: () -> Long,
+        ready: () -> Boolean,
+        seek: (Long) -> Unit,
+    ): ClipPlayPlan = coroutineScope {
+        val planned = async { quietly { plan(target, extras, own) } ?: ClipPlayPlan(null, KEPT + "the check failed") }
+        val watch = ClipSeekWatch(target.startMs)
+        val started = now()
+        while (!(planned.isCompleted && watch.landed)) {
+            if (ready()) watch.sample(position(), now())
+            if (watch.moved || now() - started > LATE_MS) {
+                val why = when {
+                    watch.moved -> "you moved yourself"
+                    planned.isCompleted -> "the player did not reach the clip time within 60 s"
+                    else -> "the check did not finish within 60 s"
+                }
+                planned.cancel()
+                return@coroutineScope ClipPlayPlan(null, KEPT + why)
+            }
+            delay(POLL_MS)
+        }
+        val plan = planned.await()
+        plan.seekToMs?.let(seek)
+        plan
+    }
+
+    /** Picks this video's subtitle file, finds the clip's lines in it and decides where to start. */
+    suspend fun plan(target: ClipPlayTarget, extras: SubtitleRequestExtras?, own: List<StreamSubtitle>): ClipPlayPlan = coroutineScope {
+        val ownLinks = own.filter { it.url.startsWith("http", ignoreCase = true) }.map { ClipSubtitleLink(it.url, it.language, it.name.orEmpty()) }
+        val forFile = if (extras == null) null else async { listed(target, extras) }
+        val bare = async { listed(target, null) }
+        val choice = choose(ownLinks, forFile?.await(), bare.await(), target.matchedUrl)
+        val link = choice.link ?: return@coroutineScope ClipPlayPlan(null, KEPT + choice.why, choice.detail)
+        val text = quietly { withTimeoutOrNull(FILE_MS) { download(link.url) } }
+        val cues = text?.let { body -> runCatching { PlayerSubtitleCueParser.parse(body, link.url) }.getOrDefault(emptyList()) }.orEmpty()
+        if (cues.isEmpty()) return@coroutineScope ClipPlayPlan(null, KEPT + "this video's subtitles could not be read", choice.detail)
+        val alignment = withContext(work) { ClipAlign.align(target.anchors, cues) }
+            ?: return@coroutineScope ClipPlayPlan(null, KEPT + "the clip's lines are not in this video's subtitles", choice.detail)
+        decide(target.startMs, alignment, choice.detail)
+    }
+
+    private suspend fun listed(target: ClipPlayTarget, extras: SubtitleRequestExtras?): List<ClipSubtitleLink> =
+        quietly { withTimeoutOrNull(LIST_MS) { listSubtitles(target.type, target.subtitleId, extras) } }.orEmpty()
+
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+
+    /** The file to line up with ([link] null: none), [why] for the note, [detail] for the "Player subtitles" line. */
+    data class Choice(val link: ClipSubtitleLink?, val why: String, val detail: String)
+
+    companion object {
+        const val MOVED = "Moved to the matching line in this video's subtitles"
+        const val KEPT = "Kept the clip time: "
+        const val NONE = "no subtitles for this video"
+        const val POLL_MS = 250L
+        const val LATE_MS = 60_000L
+        const val LIST_MS = 12_000L
+        const val FILE_MS = 15_000L
+        /** A smaller shift is not worth a seek (and a rebuffer). */
+        const val MIN_SHIFT_MS = 1_000L
+        /** A larger shift is more likely a wrong line than another release. */
+        const val MAX_SHIFT_MS = 300_000L
+
+        /**
+         * This video's file, in order: the stream's own English subtitles; an English file the add-on found by this
+         * file's hash; the add-on's first English file for this file, if it is not the one the clip was matched with
+         * and not simply the add-on's usual first file ([bare]: the list without the file's name, size and hash).
+         * [forFile] is null when the stream gives no file name, size or hash.
+         */
+        fun choose(own: List<ClipSubtitleLink>, forFile: List<ClipSubtitleLink>?, bare: List<ClipSubtitleLink>, matchedUrl: String): Choice {
+            own.firstOrNull { EpisodeSubtitleSource.isEnglish(it.language) }?.let { return Choice(it, "", "this stream's own English subtitles") }
+            if (forFile == null) return Choice(null, NONE, "the stream gives no file name, size or hash")
+            val english = forFile.filter { EpisodeSubtitleSource.isEnglish(it.language) }
+            english.firstOrNull { it.hashMatch }?.let { return Choice(it, "", "${sourceOf(it)}: found by this file's hash") }
+            val first = english.firstOrNull() ?: return Choice(null, NONE, "the add-ons list no English subtitles for this file")
+            val usual = bare.firstOrNull { EpisodeSubtitleSource.isEnglish(it.language) }?.url.orEmpty()
+            if (first.url == matchedUrl.ifBlank { usual }) {
+                return Choice(null, "this video's subtitles are the file Nuvio matched with", "the add-ons' first English file is the matched one")
+            }
+            if (first.url == usual) return Choice(null, NONE, "the add-ons gave their usual list, not one for this file")
+            return Choice(first, "", "${sourceOf(first)}: picked for this file (release: ${first.release.ifBlank { "none given" }})")
+        }
+
+        /** Seek to the corrected start unless the shift is under 1 s or over 5 min. */
+        fun decide(startMs: Long, alignment: ClipAlign.Alignment, detail: String): ClipPlayPlan {
+            val mapped = maxOf(0L, alignment.map(startMs))
+            val shift = mapped - startMs
+            return when {
+                abs(shift) < MIN_SHIFT_MS -> ClipPlayPlan(null, KEPT + "this video's subtitles agree (${signedSeconds(shift)})", detail)
+                abs(shift) > MAX_SHIFT_MS -> ClipPlayPlan(null, KEPT + "the matching lines are ${clipClock(abs(shift))} away, too far to trust", detail)
+                else -> ClipPlayPlan(mapped, "$MOVED (${signedSeconds(shift)}${speedNote(alignment.ratio)})", detail)
+            }
+        }
+
+        /** "+3.2 s", "-0.4 s" (rounded to a tenth). */
+        fun signedSeconds(ms: Long): String {
+            val tenths = (abs(ms) + 50) / 100
+            return (if (ms < 0) "-" else "+") + "${tenths / 10}.${tenths % 10} s"
+        }
+
+        /** "; this video plays 4.3% faster" for a speed other than the same one, else "". */
+        fun speedNote(ratio: Double): String {
+            if (ratio == 1.0) return ""
+            val tenths = (abs(1.0 / ratio - 1.0) * 1000).roundToInt()
+            return "; this video plays ${tenths / 10}.${tenths % 10}% " + if (ratio < 1.0) "faster" else "slower"
+        }
+
+        private fun sourceOf(link: ClipSubtitleLink): String = link.source.ifBlank { "the add-on" }
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipSubtitleList.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+
+/**
+ * One subtitle add-on answer (`{"subtitles":[{"id","url","lang",...}]}`) read with every field Clip finder can
+ * use. Nuvio's own reader keeps only id, url and language; this one also keeps a release name and the hash mark
+ * when the add-on sends them. OpenSubtitles v3 is believed to send only id, url and lang (and maybe "m": "h" for
+ * a match by the video's hash): the "Matched subtitle" and "Player subtitles" lines in Details show what it sends.
+ */
+object ClipSubtitleList {
+    private val languageKeys = listOf("lang", "language", "languageCode", "locale", "label")
+    private val releaseKeys = listOf("releaseName", "release", "subtitleFileName", "fileName", "SubFileName", "MovieReleaseName")
+
+    /** The answer of the add-on named [source]; anything that is not this shape gives an empty list. */
+    fun parse(json: String, source: String): List<ClipSubtitleLink> {
+        val items = runCatching { Json.parseToJsonElement(json).jsonObject["subtitles"]?.jsonArray }.getOrNull() ?: return emptyList()
+        return items.mapNotNull { element ->
+            val item = element as? JsonObject ?: return@mapNotNull null
+            val url = item.text("url") ?: return@mapNotNull null
+            ClipSubtitleLink(
+                url = url,
+                language = languageKeys.firstNotNullOfOrNull { item.text(it) } ?: "unknown",
+                source = source,
+                release = releaseKeys.firstNotNullOfOrNull { item.text(it) }.orEmpty(),
+                hashMatch = item.text("m") == "h",
+            )
+        }
+    }
+
+    private fun JsonObject.text(name: String): String? =
+        (this[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipStreamRank.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.streams.StreamItem
+
+/** What a file or stream name says about its release: source family (web, bluray, hdtv, dvd), group, resolution family. */
+data class ClipRelease(val source: String? = null, val group: String? = null, val resolution: String? = null) {
+    val known: Boolean get() = source != null || group != null
+
+    /** "web, GRP, hd": what is known, for Details. */
+    fun describe(): String = listOfNotNull(source, group, resolution).joinToString()
+
+    companion object {
+        private val sources = mapOf(
+            "bluray" to "bluray", "bdrip" to "bluray", "brrip" to "bluray", "bdremux" to "bluray", "remux" to "bluray",
+            "web" to "web", "webdl" to "web", "webrip" to "web", "amzn" to "web", "nf" to "web", "dsnp" to "web", "hmax" to "web",
+            "hdtv" to "hdtv", "pdtv" to "hdtv",
+            "dvd" to "dvd", "dvdrip" to "dvd", "dvd5" to "dvd", "dvd9" to "dvd",
+        )
+        private val resolutions = mapOf(
+            "2160p" to "uhd", "4k" to "uhd", "uhd" to "uhd", "1080p" to "hd", "1080i" to "hd", "720p" to "hd", "576p" to "sd", "480p" to "sd",
+        )
+        /** Last pieces after a dash that are not a group: "WEB-DL", "Blu-Ray", codecs, languages. */
+        private val notGroups = setOf("dl", "rip", "ray", "web", "x264", "x265", "h264", "h265", "hevc", "avc", "aac", "ac3", "dts", "eng", "srt")
+        private val extension = Regex("\\.(mkv|mp4|avi|m4v|ts|webm|srt|sub|ass|ssa|vtt)$", RegexOption.IGNORE_CASE)
+        private val groupAtEnd = Regex("-([A-Za-z0-9]{2,15})$")
+        private val splitter = Regex("[^a-z0-9]+")
+
+        /** "Made.Up.Show.S02E05.720p.WEB-DL.x264-GRP.srt" -> web, GRP, hd. */
+        fun of(name: String): ClipRelease {
+            val base = name.trim().replace(extension, "")
+            val tokens = base.lowercase().split(splitter).filter { it.isNotEmpty() }
+            var source: String? = null
+            for ((index, token) in tokens.withIndex()) {
+                val next = tokens.getOrNull(index + 1)
+                val joined = if ((token == "web" || token == "blu") && next in setOf("dl", "rip", "ray")) token + next else token
+                source = sources[joined] ?: continue
+                break
+            }
+            val group = groupAtEnd.find(base)?.groupValues?.get(1)?.takeIf { it.lowercase() !in notGroups }
+            return ClipRelease(source, group, tokens.firstNotNullOfOrNull { resolutions[it] })
+        }
+
+        /** A stream's release: its file name, else the first line of its title, description or name that names a source or group. */
+        fun ofStream(stream: StreamItem): ClipRelease =
+            listOfNotNull(stream.behaviorHints.filename, stream.title, stream.description, stream.name)
+                .flatMap { it.lines() }
+                .map { of(it) }
+                .firstOrNull { it.known } ?: ClipRelease()
+    }
+}
+
+/** For a stream list opened from Clip finder: the stream pinned on top, the streams tagged "Best match", and why. */
+data class ClipStreamPick(val pinned: StreamItem?, val tagged: Set<StreamItem>, val note: String)
+
+/**
+ * Which streams most likely line up with the subtitle file the clip was matched with. With a release name for that
+ * file: same source family 4, same group 3, same resolution family 1; a stream needs 3 to be tagged. Without one
+ * (OpenSubtitles v3 gives none as far as known), nothing says which release a stream lines up with, so the streams
+ * the player can check exactly go first: its own English subtitles 3, a file hash for the subtitle add-ons 2; a
+ * stream needs 2. The best score is pinned (the first such stream) and tagged (at most 5); nothing else moves.
+ */
+object ClipStreamRank {
+    const val TAG = "Best match"
+    const val HEADER = "Best match for the clip"
+    const val RELEASE_BAR = 3
+    const val CHECK_BAR = 2
+    const val MAX_TAGS = 5
+
+    fun pick(streams: List<StreamItem>, matchedRelease: String): ClipStreamPick {
+        val wanted = ClipRelease.of(matchedRelease)
+        val scored = streams.map { it to if (wanted.known) sameRelease(ClipRelease.ofStream(it), wanted) else canCheck(it) }
+        val top = scored.maxOfOrNull { it.second } ?: 0
+        val bar = if (wanted.known) RELEASE_BAR else CHECK_BAR
+        if (top < bar) {
+            val note = if (wanted.known) {
+                "no stream has the matched subtitle's release (${wanted.describe()}); order unchanged"
+            } else {
+                "the matched subtitle has no release name and no stream has its own subtitles or a file hash; order unchanged"
+            }
+            return ClipStreamPick(null, emptySet(), note)
+        }
+        val best = scored.filter { it.second == top }.map { it.first }
+        val why = if (wanted.known) "same release as the matched subtitle (${wanted.describe()})" else "own subtitles or a file hash (the matched subtitle has no release name)"
+        return ClipStreamPick(best.first(), best.take(MAX_TAGS).toSet(), "best match: ${best.size} of ${streams.size} streams, $why")
+    }
+
+    fun sameRelease(stream: ClipRelease, wanted: ClipRelease): Int =
+        (if (wanted.source != null && stream.source == wanted.source) 4 else 0) +
+            (if (wanted.group != null && stream.group.equals(wanted.group, ignoreCase = true)) 3 else 0) +
+            (if (wanted.resolution != null && stream.resolution == wanted.resolution) 1 else 0)
+
+    fun canCheck(stream: StreamItem): Int =
+        (if (stream.externalSubtitles.any { it.url.startsWith("http", ignoreCase = true) && EpisodeSubtitleSource.isEnglish(it.language) }) 3 else 0) +
+            (if (!stream.behaviorHints.videoHash.isNullOrBlank()) 2 else 0)
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowPicker.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlinx.coroutines.CancellationException
+
+/**
+ * The pick list under "Know the show?": shows and movies whose name fits what was typed, from the titles Nuvio
+ * knows ([known]: shows of earlier clips, popular catalog titles) and the catalogs' search, best first. Names are
+ * compared squashed ([ClipNames.typedScore]), so "modernfam" or "Modern  family!" still find "Modern Family".
+ */
+class ClipShowPicker(
+    private val search: suspend (query: String) -> List<ShowGuess>,
+    private val known: suspend () -> List<ShowGuess>,
+) {
+    /** Never throws (except when cancelled); fewer than 2 letters list nothing and ask nothing. */
+    suspend fun pick(typed: String): List<ShowGuess> {
+        val text = typed.trim().take(ClipFinderPipeline.MAX_TYPED)
+        if (ClipNames.key(text).length < MIN_LETTERS) return emptyList()
+        val picks = LinkedHashMap<String, Pair<ShowGuess, Int>>()
+        fun add(show: ShowGuess, score: Int) {
+            if (score <= 0 || show.metaId.isBlank()) return
+            val old = picks[show.metaId]
+            // The catalog's entry has the poster and year; the remembered one has neither.
+            val shown = if (old == null || (old.first.poster == null && show.poster != null)) show else old.first
+            picks[show.metaId] = shown to maxOf(score, old?.second ?: 0)
+        }
+        for (show in quietly { known() }.orEmpty()) add(show, ClipNames.typedScore(show.name, text))
+        for ((rank, show) in quietly { search(text) }.orEmpty().take(MAX_SEARCHED).withIndex()) {
+            add(show, maxOf(ClipNames.typedScore(show.name, text), SEARCH_SCORE - rank))
+        }
+        return picks.values.sortedByDescending { it.second }.take(MAX_PICKS).map { it.first }
+    }
+
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+
+    companion object {
+        const val MIN_LETTERS = 2
+        /** Typing pauses this long before the list is asked for. */
+        const val PAUSE_MS = 350L
+        const val MAX_PICKS = 8
+        const val MAX_SEARCHED = 8
+        /** A search result's score by its rank when its name does not hold what was typed (as in [ClipShowFinder]). */
+        const val SEARCH_SCORE = 80
+    }
+}
+
+/** "2009" from a catalog's release text ("2009-2020", "2009"), else null. */
+internal fun clipYear(releaseInfo: String?): String? = releaseInfo?.let { Regex("\\d{4}").find(it)?.value }
+
+/** The second line of a pick: "2009 · Series", "Movie". */
+internal fun clipPickDetail(show: ShowGuess): String =
+    listOfNotNull(show.year, if (show.type == "movie") "Movie" else "Series").joinToString(" · ")
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** How the show search ended: answers best first, or why there are none ([failure], plain English). */
+data class ClipShowOutcome(val answers: List<ClipAnswer> = emptyList(), val failure: String? = null)
+
+/**
+ * Searching episodes from the clues and the heard lines: suspects ([ClipShowFinder]), the name check when
+ * there are many, then the subtitles of up to 3 shows. Moved out of the pipeline as it was, with three
+ * additions: episodes in [ClipEpisodeRank] order, the episode list and subtitles fetched while listening
+ * ([ClipPrefetch]) reused, and a "Match" note with the numbers behind the confidence. Each answer carries
+ * what the player needs to check its time in the video Mo picks ([ClipPlayCheck]): the episode, a few
+ * matched lines ([ClipAlign.anchors]) and the subtitle file they came from.
+ */
+class ClipShowSearch(
+    private val finder: ClipShowFinder,
+    private val loadEpisodes: suspend (ShowGuess) -> List<ClipEpisode>,
+    private val subtitles: EpisodeSubtitleSource,
+    private val now: () -> Long,
+    private val work: CoroutineContext,
+) {
+    suspend fun run(
+        clues: ClipClues,
+        lines: List<ClipLine>,
+        prefetch: ClipPrefetch?,
+        timings: ClipTimings,
+        note: (String, String) -> Unit,
+        progress: (String) -> Unit,
+    ): ClipShowOutcome {
+        var suspects = finder.find(clues, lines, onNote = note)
+        timings.lap("guess")
+        val hint = ClipNames.hint(clues, lines)
+        val cached: Set<String> = prefetch?.fetched.orEmpty()
+        val episodeLists = mutableMapOf<String, List<ClipEpisode>>()
+        val early = prefetch?.show
+        if (prefetch != null && early != null) episodeLists[early.metaId] = prefetch.episodes
+        suspend fun episodesOf(show: ShowGuess): List<ClipEpisode> {
+            val loaded = episodeLists.getOrPut(show.metaId) { quietly { loadEpisodes(show) }.orEmpty() }
+            return ClipEpisodeRank.rank(orderEpisodes(loaded, hint), hint, lines, cached)
+        }
+
+        // Many suspects: one subtitle file of each tells which show has the people named in the clip.
+        val names = ClipNameCheck.names(lines)
+        if (ClipNameCheck.needed(suspects, names)) {
+            progress("Checking which show has the names heard")
+            note("Names heard", names.joinToString())
+            val ranked = withTimeoutOrNull(ClipFinderPipeline.NAME_CHECK_MS) {
+                ClipNameCheck.rank(suspects, names) { show ->
+                    episodesOf(show).firstOrNull()?.let { episode -> subtitles.cues(show.metaId, episode) }
+                }
+            }
+            if (ranked != null) {
+                note("Name check", ranked.joinToString { "${it.first.show.name} ${it.second}" }.take(300))
+                suspects = ranked.map { it.first }
+            }
+            timings.lap("names")
+        }
+        val chosen = suspects.take(ClipNameCheck.KEEP)
+        note("Show guesses", chosen.joinToString { "${it.show.name} (${it.why})" }.ifBlank { "none" })
+        if (chosen.isEmpty()) return ClipShowOutcome(failure = if (clues.typed.isBlank()) ClipMessages.NO_SHOW else ClipMessages.NO_TYPED_SHOW)
+        val deadline = now() + ClipFinderPipeline.SEARCH_BUDGET_MS
+        val owners = mutableMapOf<String, Pair<ShowGuess, ClipEpisode>>()
+        var best = emptyList<EpisodeCues>()
+        var candidates = emptyList<ClipCandidate>()
+        var tried = 0
+        var withSubtitles = 0
+        for (guess in chosen.map { it.show }) {
+            if (now() >= deadline) break
+            progress("Loading the episode list of ${guess.name}")
+            val episodes = episodesOf(guess)
+            timings.lap("episode list")
+            if (episodes.isEmpty()) continue
+            for (episode in episodes) owners[episode.videoId] = guess to episode
+            val showDeadline = minOf(deadline, now() + ClipFinderPipeline.SHOW_BUDGET_MS)
+            val result = withContext(work) {
+                subtitles.search(guess.metaId, episodes, lines, showDeadline, best) { done, total, found ->
+                    progress("Searching ${guess.name}: $done of $total episodes, $found with subtitles")
+                }
+            }
+            timings.lap("subtitles", "${result.tried} episodes")
+            best = result.best
+            candidates = result.candidates
+            tried += result.tried
+            withSubtitles += result.withSubtitles
+            if (result.decisive) break
+            if (result.tried < episodes.size) note("Search", "stopped at the time limit in ${guess.name}")
+        }
+        note("Subtitles", "$withSubtitles of $tried episodes")
+        if (tried == 0) return ClipShowOutcome(failure = ClipMessages.NO_EPISODES)
+        if (withSubtitles == 0) return ClipShowOutcome(failure = ClipMessages.NO_SUBTITLES)
+        note("Match", matchNote(lines, candidates))
+        val cuesOf = best.associateBy { it.videoId }
+        val answers = candidates.filter { it.hits >= ClipMatcher.MIN_HITS }.mapNotNull { candidate ->
+            owners[candidate.videoId]?.let { (show, episode) ->
+                val cues = cuesOf[candidate.videoId]?.cues.orEmpty()
+                val link = runCatching { subtitles.usedLink(show.metaId, episode.videoId) }.getOrNull()
+                ClipAnswer(candidate, show, episode.title, episode.thumbnail, episode, ClipAlign.anchors(cues, candidate.startMs, candidate.endMs), link)
+            }
+        }
+        note("Candidates", answers.size.toString())
+        if (answers.isEmpty()) return ClipShowOutcome(failure = ClipMessages.NO_MATCH)
+        note("Matched subtitle", matchedNote(answers.first().subtitle))
+        return ClipShowOutcome(answers)
+    }
+
+    /** "OpenSubtitles v3: no release name given": which file the best answer was matched with (the stream list ranks by its release). */
+    private fun matchedNote(link: ClipSubtitleLink?): String {
+        if (link == null) return "from an earlier run's cache (add-on and release not known)"
+        return link.source.ifBlank { "add-on" } + ": " + link.release.ifBlank { "no release name given" }
+    }
+
+    /** "41 shared phrases of 160 heard (25%), next best 3": the numbers behind the confidence, to tune it on real clips. */
+    private fun matchNote(lines: List<ClipLine>, candidates: List<ClipCandidate>): String {
+        val heard = ClipText.triples(lines.flatMap { ClipText.normalize(it.text) }).toSet().size
+        val top = candidates.firstOrNull() ?: return "nothing shared with $heard heard phrases"
+        val share = if (heard == 0) 0 else top.hits * 100 / heard
+        return "${top.hits} shared phrases of $heard heard ($share%), next best ${candidates.getOrNull(1)?.hits ?: 0}"
+    }
+
+    private suspend fun <T> quietly(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
+import com.nuvio.app.features.addons.fetchAddonResponseText
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
+import com.nuvio.app.features.addons.httpPostJsonWithHeaders
+import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.player.SubtitleRequestExtras
+import com.nuvio.app.features.player.addonSubtitleRequests
+import com.nuvio.app.features.streams.epochMs
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * The one running Clip finder search. It lives outside the screen so that going to the stream list
+ * and back does not start the search again.
+ */
+object ClipFinderSession {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val _state = MutableStateFlow(ClipFinderState())
+    val state: StateFlow<ClipFinderState> = _state.asStateFlow()
+    private var job: Job? = null
+    private var runId = 0
+    private var pipeline: ClipFinderPipeline? = null
+    private var memory: ClipMemory? = null
+
+    /** Starts the search for [source]. Does nothing when that clip is already running or shown, unless [restart]. */
+    fun start(source: String, restart: Boolean = false) {
+        if (!restart && _state.value.source == source) return
+        job?.cancel()
+        val id = ++runId
+        _state.value = ClipFinderState(source = source)
+        val native = ClipFinderBridge.current()
+        val cache = object : ClipSubtitleCache {
+            override fun read(key: String): String? = native?.cacheRead(key)
+            override fun write(key: String, text: String) {
+                native?.cacheWrite(key, text)
+            }
+        }
+        val memory = ClipMemory(
+            read = { native?.settingRead(ClipMemory.KEY) },
+            write = { text -> native?.settingWrite(ClipMemory.KEY, text) },
+            now = ::epochMs,
+        ).also { this@ClipFinderSession.memory = it }
+        val created = ClipFinderPipeline(
+            native = native,
+            finder = ClipShowFinder(::clipSearchShows, ::clipPopularShows, memory) { prompt -> clipAskModel(native, prompt) },
+            loadEpisodes = ::clipLoadEpisodes,
+            subtitles = EpisodeSubtitleSource({ type, id -> clipListSubtitles(type, id) }, ::clipDownloadText, cache, ::epochMs),
+            memory = memory,
+            now = ::epochMs,
+            youtube = ClipYouTubeFinder(::clipWebGet, ::clipWebPost),
+            webGet = ::clipWebGet,
+        )
+        pipeline = created
+        job = scope.launch {
+            created.run(source) { if (id == runId) _state.value = it }
+        }
+    }
+
+    /**
+     * Searches again with a show name the user typed, or the show [picked] in the pick list (then exactly that
+     * show), reusing what was heard. Stops a search that still runs.
+     */
+    fun searchTyped(name: String, picked: ShowGuess? = null) {
+        val current = _state.value
+        val active = pipeline ?: return
+        if (name.isBlank() || !clipCanType(current)) return
+        job?.cancel()
+        val id = ++runId
+        job = scope.launch {
+            active.runTyped(current, name, picked) { if (id == runId) _state.value = it }
+        }
+    }
+
+    /** The pick list for what was typed so far ([ClipShowPicker]): the catalogs' search and the titles Nuvio knows. */
+    suspend fun pickShows(typed: String): List<ShowGuess> {
+        val remembered = memory
+        return ClipShowPicker(::clipSearchShows) {
+            runCatching { remembered?.shows() }.getOrNull().orEmpty() + clipPopularShows()
+        }.pick(typed)
+    }
+
+    /** A line for Details from outside the search (the stream list, the player); the screen shows it when Mo comes back. */
+    fun note(label: String, value: String) {
+        _state.value = _state.value.withNote(label, value)
+    }
+
+    /** The screen opened the YouTube video by itself: it must not do so again when Mo comes back. */
+    fun youTubeOpened() {
+        _state.value = _state.value.copy(openYouTube = false)
+    }
+}
+
+private const val MODEL_TIMEOUT_MS = 12_000L
+
+/** One question to Apple's on-device model through the bridge; a missing bridge or no answer in 12 s is a problem text. */
+internal suspend fun clipAskModel(native: ClipFinderNative?, prompt: String): ClipModelAnswer {
+    val phone = native ?: return ClipModelAnswer(problem = "only in the iPhone app")
+    return withTimeoutOrNull(MODEL_TIMEOUT_MS) {
+        suspendCancellableCoroutine { continuation ->
+            phone.askModel(
+                prompt,
+                object : ClipModelListener {
+                    override fun onAnswer(text: String?, problem: String?) {
+                        if (continuation.isActive) continuation.resume(ClipModelAnswer(text.orEmpty(), problem.orEmpty()))
+                    }
+                },
+            )
+        }
+    } ?: ClipModelAnswer(problem = "no answer in 12 s")
+}
+
+private var popularShows: List<ShowGuess> = emptyList()
+
+/**
+ * Well-known titles to compare hashtags and handles with: the first page of every plain catalog
+ * (series and movies, no required filter) of the switched-on add-ons, for example Cinemeta's
+ * "Popular". Fetched once per app start; an empty answer is asked for again next time.
+ */
+internal suspend fun clipPopularShows(): List<ShowGuess> {
+    if (popularShows.isNotEmpty()) return popularShows
+    AddonRepository.initialize()
+    val catalogs = AddonRepository.uiState.value.addons.enabledAddons().mapNotNull { it.manifest }.flatMap { manifest ->
+        manifest.catalogs
+            .filter { catalog -> (catalog.type == "series" || catalog.type == "movie") && catalog.extra.none { it.isRequired } }
+            .map { manifest to it }
+    }.take(8)
+    val pages = coroutineScope {
+        catalogs.map { (manifest, catalog) ->
+            async {
+                quietly(8_000L) { fetchCatalogPage(manifest.transportUrl, catalog.type, catalog.id, maxItems = 100).items }.orEmpty()
+            }
+        }.awaitAll()
+    }
+    val shows = pages.flatten().filter { it.name.isNotBlank() }
+        .map { ShowGuess(it.id, it.type, it.name, it.poster, clipYear(it.releaseInfo)) }
+        .distinctBy { it.metaId }
+    popularShows = shows.filter { it.metaId.startsWith("tt") }.ifEmpty { shows }
+    return popularShows
+}
+
+private suspend fun <T> quietly(timeoutMs: Long, block: suspend () -> T): T? =
+    withTimeoutOrNull(timeoutMs) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/** Nuvio's own search: every search catalog (series and movies) of the switched-on add-ons, results mixed by rank. */
+internal suspend fun clipSearchShows(query: String): List<ShowGuess> = coroutineScope {
+    AddonRepository.initialize()
+    val catalogs = AddonRepository.uiState.value.addons.enabledAddons().mapNotNull { it.manifest }.flatMap { manifest ->
+        manifest.catalogs
+            .filter { catalog ->
+                (catalog.type == "series" || catalog.type == "movie") &&
+                    catalog.extra.any { it.name == "search" } &&
+                    catalog.extra.none { it.isRequired && it.name != "search" }
+            }
+            .map { manifest to it }
+    }.take(6)
+    val pages = catalogs.map { (manifest, catalog) ->
+        async {
+            quietly(8_000L) {
+                fetchCatalogPage(manifest.transportUrl, catalog.type, catalog.id, search = query, maxItems = 8).items
+            }.orEmpty()
+        }
+    }.awaitAll()
+    val mixed = (0 until 8).flatMap { rank -> pages.mapNotNull { it.getOrNull(rank) } }
+        .map { ShowGuess(it.id, it.type, it.name, it.poster, clipYear(it.releaseInfo)) }
+        .distinctBy { it.metaId }
+    // Subtitle add-ons only know IMDb ids ("tt..."), so those results go first when there are any.
+    mixed.filter { it.metaId.startsWith("tt") }.ifEmpty { mixed }
+}
+
+/** The episodes of a series (specials and season 0 left out), or the movie itself as one entry. */
+internal suspend fun clipLoadEpisodes(show: ShowGuess): List<ClipEpisode> {
+    val meta = quietly(25_000L) { MetaDetailsRepository.fetch(show.type, show.metaId) } ?: return emptyList()
+    val imdbId = listOf(meta.id, meta.imdbId.orEmpty(), show.metaId).firstOrNull { it.startsWith("tt") }
+    val episodes = meta.videos.filter { (it.season ?: 0) > 0 && it.episode != null }
+    if (episodes.isEmpty()) {
+        return listOf(ClipEpisode(videoId = meta.id, subtitleId = imdbId ?: meta.id, type = show.type))
+    }
+    return episodes.map { video ->
+        val subtitleId = if (video.id.startsWith("tt") || imdbId == null) video.id else "$imdbId:${video.season}:${video.episode}"
+        ClipEpisode(video.id, subtitleId, show.type, video.season, video.episode, video.title, video.thumbnail, video.overview)
+    }
+}
+
+/**
+ * Every subtitle the switched-on subtitle add-ons list for [subtitleId], in add-on order, with the release name
+ * and hash mark when an add-on sends them ([ClipSubtitleList]). [extras] names the video file (name, size,
+ * hash), as the player sends it. 10 s per add-on; a failed add-on lists nothing.
+ */
+internal suspend fun clipListSubtitles(type: String, subtitleId: String, extras: SubtitleRequestExtras? = null): List<ClipSubtitleLink> =
+    coroutineScope {
+        addonSubtitleRequests(type, subtitleId, extras).map { request ->
+            async { quietly(10_000L) { ClipSubtitleList.parse(fetchAddonResponseText(request.url), request.addonName) }.orEmpty() }
+        }.awaitAll().flatten()
+    }
+
+internal suspend fun clipDownloadText(url: String): String = httpGetTextWithHeaders(url, emptyMap())
+
+/** A plain web request from Kotlin (YouTube, Instagram's embed page), at most 6 MB of answer. */
+internal suspend fun clipWebGet(url: String, headers: Map<String, String>): ClipWebReply {
+    val reply = httpRequestRaw("GET", url, headers, "", maxResponseBodyBytes = 6 * 1024 * 1024)
+    return ClipWebReply(reply.status, reply.body)
+}
+
+/** A JSON request (YouTube's player answer); a refusal throws, which the caller treats as "failed". */
+internal suspend fun clipWebPost(url: String, body: String, headers: Map<String, String>): ClipWebReply =
+    ClipWebReply(200, httpPostJsonWithHeaders(url, body, headers))
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderScreen.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.NuvioSectionLabel
+import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.nuvio
+import io.ktor.http.decodeURLPart
+
+internal const val CLIP_FINDER_TITLE = "Clip finder"
+internal val CLIP_FINDER_STAGES = listOf("Reading link", "Listening", "Searching episodes")
+
+private fun isClipFile(source: String) = source.startsWith("file://", ignoreCase = true)
+
+/** The text shown for a shared clip: a web link as it is, a shared video by its file name. */
+internal fun clipSourceLabel(source: String): String {
+    if (!isClipFile(source)) return source
+    val name = source.substringBefore('?').substringBefore('#').substringAfterLast('/')
+    return runCatching { name.decodeURLPart() }.getOrDefault(name)
+}
+
+/**
+ * [onOpen] gets the tapped candidate and the time to start playing from, in milliseconds; the answer is kept
+ * first ([ClipPlayTargets]) so the stream list and the player can check it. [onShow] gets a show to open (its
+ * episode list) when the clip itself could not be heard. A YouTube video opens through the system (the
+ * YouTube app when installed): by itself once when it is the only sure answer, else on a tap.
+ */
+@Composable
+fun ClipFinderScreen(
+    source: String,
+    onBack: () -> Unit,
+    onOpen: (ClipAnswer, Long) -> Unit = { _, _ -> },
+    onShow: (ShowGuess) -> Unit = {},
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val current by ClipFinderSession.state.collectAsStateWithLifecycle()
+    val state = if (current.source == source) current else ClipFinderState(source = source)
+    var afterClip by rememberSaveable { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val openAnswer: (ClipAnswer, Long) -> Unit = { answer, startMs ->
+        ClipPlayTargets.arm(answer, startMs)
+        onOpen(answer, startMs)
+    }
+    val openVideo: (ClipVideoAnswer, Long) -> Unit = { video, startMs ->
+        runCatching { uriHandler.openUri(ClipYouTube.openUrl(video.video.id, startMs)) }
+    }
+    LaunchedEffect(source) { ClipFinderSession.start(source) }
+    LaunchedEffect(state.openYouTube) {
+        val first = state.youtube.firstOrNull()
+        if (state.openYouTube && first != null) {
+            ClipFinderSession.youTubeOpened()
+            openVideo(first, clipStartMs(first.candidate, afterClip))
+        }
+    }
+
+    NuvioScreen {
+        item { NuvioScreenHeader(title = CLIP_FINDER_TITLE, onBack = onBack) }
+        item {
+            NuvioSurfaceCard {
+                NuvioSectionLabel(if (isClipFile(source)) "Shared video" else "Shared link")
+                Text(clipSourceLabel(source), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            }
+        }
+        item { ClipStagesCard(state) }
+        if (state.failed) {
+            item { ClipFailureCard(state, onRetry = { ClipFinderSession.start(source, restart = true) }) }
+        }
+        if (state.answers.isNotEmpty()) {
+            item { ClipAnswersCard(state.answers, afterClip, onAfterClip = { afterClip = it }, onOpen = openAnswer) }
+        }
+        if (state.youtube.isNotEmpty()) {
+            item { ClipYouTubeCard(state.youtube, afterClip, onOpen = openVideo) }
+        }
+        if (state.shows.isNotEmpty()) {
+            item { ClipShowsCard(state.shows, onShow) }
+        }
+        if (clipCanType(state)) {
+            item {
+                ClipTypeCard(
+                    heard = !state.noClip,
+                    onSearch = { ClipFinderSession.searchTyped(it) },
+                    // A clip that could not be heard has no moment to find: a picked show just opens.
+                    onPick = { show -> if (state.noClip) onShow(show) else ClipFinderSession.searchTyped(show.name, show) },
+                )
+            }
+        }
+        if (state.notes.isNotEmpty()) {
+            item { ClipNotesCard(state.notes) }
+        }
+        if (state.lines.isNotEmpty()) {
+            item { ClipLinesCard(state.lines) }
+        }
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderParts.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.Chip
+import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.core.ui.NuvioPrimaryButton
+import com.nuvio.app.core.ui.NuvioSectionLabel
+import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.nuvio
+import kotlinx.coroutines.delay
+
+@Composable
+internal fun ClipStagesCard(state: ClipFinderState) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Steps")
+        CLIP_FINDER_STAGES.forEachIndexed { index, stage ->
+            val mark = clipStageMark(state, index)
+            Text(
+                text = "${index + 1}. $stage" + if (mark.isEmpty()) "" else " ($mark)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (mark == "now" || mark == "failed") colors.textPrimary else colors.textMuted,
+            )
+        }
+        if (state.progress.isNotBlank()) {
+            Text(state.progress, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        }
+    }
+}
+
+@Composable
+internal fun ClipFailureCard(state: ClipFinderState, onRetry: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Stopped at: ${CLIP_FINDER_STAGES.getOrElse(state.stage.ordinal) { "" }}")
+        Text(state.message, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        if (state.showFileHint) {
+            Text(ClipMessages.FILE_HINT, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+        }
+        NuvioPrimaryButton(text = "Try again", modifier = Modifier.padding(top = 8.dp), onClick = onRetry)
+    }
+}
+
+@Composable
+internal fun ClipAnswersCard(
+    answers: List<ClipAnswer>,
+    afterClip: Boolean,
+    onAfterClip: (Boolean) -> Unit,
+    onOpen: (ClipAnswer, Long) -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Found (tap one, then pick a stream)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            Chip(label = "From clip start", selected = !afterClip, onClick = { onAfterClip(false) })
+            Chip(label = "After the clip", selected = afterClip, onClick = { onAfterClip(true) })
+        }
+        answers.forEach { answer ->
+            val startMs = clipStartMs(answer.candidate, afterClip)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(answer, startMs) }
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(clipAnswerTitle(answer), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(
+                    text = clipAnswerDetail(answer) + ". Plays from ${clipClock(startMs)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+/** YouTube videos whose captions hold the clip; a tap opens the YouTube app at the moment. */
+@Composable
+internal fun ClipYouTubeCard(videos: List<ClipVideoAnswer>, afterClip: Boolean, onOpen: (ClipVideoAnswer, Long) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("On YouTube (tap to open the YouTube app)")
+        videos.forEach { video ->
+            val startMs = clipStartMs(video.candidate, afterClip)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(video, startMs) }
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(clipVideoTitle(video), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(
+                    text = clipMatchDetail(video.candidate) + ". Opens at ${clipClock(startMs)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+/** Shows named by the caption when the clip itself could not be heard; a tap opens the show's page. */
+@Composable
+internal fun ClipShowsCard(shows: List<ShowGuess>, onShow: (ShowGuess) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Open the show and pick the episode")
+        shows.forEach { show ->
+            Text(
+                text = show.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onShow(show) }
+                    .padding(vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/**
+ * As Mo types, matching shows and movies are listed after a short pause ([ClipShowPicker]): poster, name,
+ * year and type. A tap ([onPick]) searches exactly that show with what was already heard: nothing is read or
+ * listened to again; when nothing could be heard ([heard] false) it opens the show. The button searches the
+ * typed name as before (the list can stay empty when the catalogs do not answer).
+ */
+@Composable
+internal fun ClipTypeCard(heard: Boolean, onSearch: (String) -> Unit, onPick: (ShowGuess) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    var name by rememberSaveable { mutableStateOf("") }
+    var picks by remember { mutableStateOf<List<ShowGuess>>(emptyList()) }
+    LaunchedEffect(name) {
+        if (ClipNames.key(name).length < ClipShowPicker.MIN_LETTERS) {
+            picks = emptyList()
+            return@LaunchedEffect
+        }
+        delay(ClipShowPicker.PAUSE_MS)
+        picks = ClipFinderSession.pickShows(name)
+    }
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Know the show? Type its name")
+        Text(
+            text = if (heard) "Tap it in the list: Nuvio searches it with what it already heard. Nothing is listened to again." else "Tap it in the list to open it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
+        NuvioInputField(
+            value = name,
+            onValueChange = { name = it.take(80) },
+            placeholder = "Show or movie name",
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        picks.forEach { show ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(show) }
+                    .padding(vertical = 6.dp),
+            ) {
+                AsyncImage(
+                    model = show.poster,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(width = 40.dp, height = 60.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(show.name, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                    Text(clipPickDetail(show), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                }
+            }
+        }
+        NuvioPrimaryButton(text = "Search this show", enabled = name.isNotBlank(), onClick = { onSearch(name) })
+    }
+}
+
+@Composable
+internal fun ClipNotesCard(notes: List<ClipNote>) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Details (for a screenshot if something fails)")
+        notes.forEach { note ->
+            Text("${note.label}: ${note.value}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+
+@Composable
+internal fun ClipLinesCard(lines: List<ClipLine>) {
+    val colors = MaterialTheme.nuvio.colors
+    NuvioSurfaceCard {
+        NuvioSectionLabel("Heard (first lines)")
+        lines.take(6).forEach { line ->
+            Text("${clipClock(line.startMs)}  ${line.text}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+```
+
+##### File: `composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPlayerHooks.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.features.player.PlayerScreenArgs
+import com.nuvio.app.features.streams.AddonStreamGroup
+import com.nuvio.app.features.streams.SharedStream
+import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.epochMs
+
+private const val NOTE_MS = 4_000L
+
+/**
+ * The player's one Clip finder hook (one line in PlayerScreenContent): when this player was opened from a Clip
+ * finder answer, its start time is checked against this video's subtitles once ([ClipPlayCheck]). The note shows
+ * as a toast and in Details. [ready]: the player's own first seek is done and the stream is the one it opened.
+ */
+@Composable
+internal fun ClipPlayerCheck(args: PlayerScreenArgs, position: () -> Long, ready: () -> Boolean, seek: (Long) -> Unit) {
+    val target = remember(args.launchId) {
+        ClipPlayTargets.forPlayer(args.launchId, args.parentMetaId, args.seasonNumber, args.episodeNumber, args.initialPositionMs)
+    } ?: return
+    LaunchedEffect(target, args.launchId) {
+        val check = ClipPlayCheck({ type, id, extras -> clipListSubtitles(type, id, extras) }, ::clipDownloadText, ::epochMs)
+        val plan = check.run(target, args.subtitleExtras, args.externalSubtitles, position, ready, seek)
+        NuvioToastController.show(plan.note, NOTE_MS)
+        ClipFinderSession.note("Player", plan.note)
+        if (plan.detail.isNotBlank()) ClipFinderSession.note("Player subtitles", plan.detail)
+    }
+}
+
+/**
+ * The stream list's Clip finder hook (StreamDestination): for a list opened from Clip finder ([fromClip]) the
+ * best match is worked out from the streams loaded so far; null for any other list, which stays as it is.
+ */
+@Composable
+internal fun rememberClipStreamPick(fromClip: Boolean, groups: List<AddonStreamGroup>): ClipStreamPick? {
+    val pick = remember(fromClip, groups) {
+        if (fromClip) ClipStreamRank.pick(groups.flatMap { it.streams }, ClipPlayTargets.current()?.release.orEmpty()) else null
+    }
+    LaunchedEffect(pick?.note) {
+        pick?.note?.let { ClipFinderSession.note("Stream order", it) }
+    }
+    return pick
+}
+
+/** The best match, shown above the list under "Best match for the clip" (the slot a party's shared stream uses). */
+internal fun clipPinned(pick: ClipStreamPick?): SharedStream? =
+    pick?.pinned?.let { SharedStream(label = ClipStreamRank.HEADER, stream = it) }
+
+/** The stream list's highlight: the party's own label first, then "Best match" on the tagged streams. */
+@Composable
+internal fun rememberClipHighlight(pick: ClipStreamPick?, other: (StreamItem) -> String?): (StreamItem) -> String? =
+    remember(pick, other) {
+        val tagged = pick?.tagged.orEmpty()
+        val highlight: (StreamItem) -> String? = { stream -> other(stream) ?: if (stream in tagged) ClipStreamRank.TAG else null }
+        highlight
+    }
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipAlignTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleSyncCue
+import kotlin.math.abs
+import kotlin.math.roundToLong
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/** Made-up lines only ([ClipTestText]); one cue every 4 s in the file the clip was matched with. */
+class ClipAlignTest {
+    private val texts = ClipTestText.cueTexts(205, count = 80)
+
+    /** The matched file's lines as another release has them: [shiftMs] later and at [ratio] of the time. */
+    private fun cues(shiftMs: Long = 0, ratio: Double = 1.0, lines: List<String> = texts) =
+        lines.mapIndexed { index, text ->
+            val start = (index * 4_000L * ratio).roundToLong() + shiftMs
+            SubtitleSyncCue(start, start + 3_000, text)
+        }
+
+    @Test
+    fun `anchors are up to twelve lines of four or more words around the match, spread evenly`() {
+        val withShort = cues().toMutableList().also { it[20] = it[20].copy(text = "Yeah. What?") }
+        val anchors = ClipAlign.anchors(withShort, 100_000, 140_000)
+        assertEquals(12, anchors.size)
+        assertTrue(anchors.none { it.text == "Yeah. What?" })
+        assertEquals(72_000, anchors.first().startTimeMs)
+        assertEquals(168_000, anchors.last().startTimeMs)
+        assertEquals(9, ClipAlign.anchors(cues(), 0, 4_000).size)
+    }
+
+    @Test
+    fun `a release that starts 3_2 s later moves every line by 3_2 s`() {
+        val anchors = ClipAlign.anchors(cues(), 100_000, 140_000)
+        val alignment = assertNotNull(ClipAlign.align(anchors, cues(shiftMs = 3_200)))
+        assertEquals(1.0, alignment.ratio)
+        assertEquals(12, alignment.pairs.size)
+        assertEquals(88_200, alignment.map(85_000))
+    }
+
+    @Test
+    fun `a video playing 4 percent faster is found from lines far apart`() {
+        val pal = 23.976 / 25.0
+        val anchors = ClipAlign.anchors(cues(), 60_000, 280_000)
+        val alignment = assertNotNull(ClipAlign.align(anchors, cues(shiftMs = 5_000, ratio = pal)))
+        assertEquals(pal, alignment.ratio)
+        assertEquals(12, alignment.pairs.size)
+        // 45 s of the matched file is 45 x 0.95904 + 5 = 48.157 s of this video.
+        assertTrue(abs(alignment.map(45_000) - 48_157) <= 1, "mapped to ${alignment.map(45_000)}")
+    }
+
+    @Test
+    fun `lines close together cannot tell the speed, so the same speed is kept`() {
+        val anchors = ClipAlign.anchors(cues(), 100_000, 110_000)
+        val alignment = assertNotNull(ClipAlign.align(anchors, cues(shiftMs = 5_000, ratio = 23.976 / 25.0)))
+        assertEquals(1.0, alignment.ratio)
+    }
+
+    @Test
+    fun `other words give no alignment`() {
+        val anchors = ClipAlign.anchors(cues(), 100_000, 140_000)
+        assertNull(ClipAlign.align(anchors, cues(lines = ClipTestText.cueTexts(999, count = 80))))
+    }
+
+    @Test
+    fun `a line said again far away is skipped and a line said again close by counts once`() {
+        val anchors = cues().subList(25, 28) // at 100, 104 and 108 s
+        val recap = (cues(shiftMs = 3_200) + SubtitleSyncCue(10_000, 13_000, texts[26])).sortedBy { it.startTimeMs }
+        assertEquals(listOf(ClipAlign.Hit(100_000, 103_200), ClipAlign.Hit(108_000, 111_200)), ClipAlign.pairs(anchors, recap))
+        assertEquals(103_200, assertNotNull(ClipAlign.align(anchors, recap)).map(100_000))
+        val echo = (cues(shiftMs = 3_200) + SubtitleSyncCue(109_000, 110_000, texts[26])).sortedBy { it.startTimeMs }
+        assertEquals(
+            listOf(ClipAlign.Hit(100_000, 103_200), ClipAlign.Hit(104_000, 107_200), ClipAlign.Hit(108_000, 111_200)),
+            ClipAlign.pairs(anchors, echo),
+        )
+        // Two lines, one of them repeated: one pair is not enough to move anything.
+        assertNull(ClipAlign.align(cues().subList(25, 27), recap))
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleRequestExtras
+import com.nuvio.app.features.player.SubtitleSyncCue
+import com.nuvio.app.features.streams.StreamSubtitle
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+
+/** Made-up lines and addresses only. The clip was matched at 100-140 s of matched.srt and starts at 85 s (15 s before). */
+@OptIn(ExperimentalCoroutinesApi::class)
+class ClipPlayCheckTest {
+    private val texts = ClipTestText.cueTexts(205, count = 80)
+    private val matched = "https://subs.example.test/matched.srt"
+    private val forFile = "https://subs.example.test/for-file.srt"
+    private val own = "https://cdn.example.test/own.srt"
+    private val start = 85_000L
+    private val extras = SubtitleRequestExtras(filename = "Made.Up.Show.S02E05.720p.WEB-DL-GRP.mkv")
+
+    private fun cues(shiftMs: Long = 0, lines: List<String> = texts) =
+        lines.mapIndexed { index, text -> SubtitleSyncCue(index * 4_000L + shiftMs, index * 4_000L + shiftMs + 3_000, text) }
+
+    private fun srt(cues: List<SubtitleSyncCue>): String = cues.mapIndexed { index, cue ->
+        "${index + 1}\n${stamp(cue.startTimeMs)} --> ${stamp(cue.endTimeMs)}\n${cue.text}\n\n"
+    }.joinToString("")
+
+    private fun stamp(ms: Long): String {
+        fun two(n: Long) = n.toString().padStart(2, '0')
+        return "${two(ms / 3_600_000)}:${two(ms / 60_000 % 60)}:${two(ms / 1_000 % 60)},${(ms % 1_000).toString().padStart(3, '0')}"
+    }
+
+    private fun link(url: String, hash: Boolean = false) = ClipSubtitleLink(url, "eng", "Sample Subs", hashMatch = hash)
+
+    private val target = ClipPlayTarget("tt001", 2, 5, "series", "tt001:2:5", start, ClipAlign.anchors(cues(), 100_000, 140_000), matched, "")
+
+    /** The subtitle add-ons ([forFileList] when asked with the file's name, else the usual list) and the files they serve. */
+    private inner class Fake(
+        val files: Map<String, String>,
+        val forFileList: List<ClipSubtitleLink> = listOf(link(forFile), link(matched)),
+        val downloadMs: Long = 0,
+    ) {
+        val asked = mutableListOf<SubtitleRequestExtras?>()
+        val downloads = mutableListOf<String>()
+        val seeks = mutableListOf<Long>()
+
+        fun check(now: () -> Long) = ClipPlayCheck(
+            listSubtitles = { _, _, given -> asked += given; if (given == null) listOf(link(matched)) else forFileList },
+            download = { url -> downloads += url; delay(downloadMs); files.getValue(url) },
+            now = now,
+            work = EmptyCoroutineContext,
+        )
+    }
+
+    /** The player reaches the clip time 1 s after it opens and plays on. */
+    private fun TestScope.playing(): Long = if (testScheduler.currentTime < 1_000) 0L else start + testScheduler.currentTime - 1_000
+
+    @Test
+    fun `a release 3_2 s later moves the player once, after it reached the clip time`() = runTest {
+        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))))
+        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { fake.seeks += it }
+        assertEquals(listOf(88_200L), fake.seeks)
+        assertEquals("Moved to the matching line in this video's subtitles (+3.2 s)", plan.note)
+        assertEquals("Sample Subs: picked for this file (release: none given)", plan.detail)
+        assertEquals(listOf(forFile), fake.downloads)
+        assertEquals(listOf(extras, null), fake.asked.sortedBy { it == null })
+    }
+
+    @Test
+    fun `when Mo moves himself first nothing is moved`() = runTest {
+        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))), downloadMs = 5_000)
+        fun position(): Long {
+            val now = testScheduler.currentTime
+            return when {
+                now < 1_000 -> 0L
+                now < 3_000 -> start + now - 1_000
+                else -> 400_000 + now - 3_000
+            }
+        }
+        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { position() }, { true }) { fake.seeks += it }
+        assertTrue(fake.seeks.isEmpty())
+        assertEquals("Kept the clip time: you moved yourself", plan.note)
+    }
+
+    @Test
+    fun `the stream's own subtitles come first and a tiny difference is not worth a seek`() = runTest {
+        val fake = Fake(mapOf(own to srt(cues(shiftMs = 400))))
+        val ownSubtitles = listOf(StreamSubtitle(own, "en"), StreamSubtitle("file:///local/own.srt", "en"))
+        val plan = fake.check { testScheduler.currentTime }.run(target, extras, ownSubtitles, { playing() }, { true }) { fake.seeks += it }
+        assertTrue(fake.seeks.isEmpty())
+        assertEquals("Kept the clip time: this video's subtitles agree (+0.4 s)", plan.note)
+        assertEquals("this stream's own English subtitles", plan.detail)
+        assertEquals(listOf(own), fake.downloads)
+    }
+
+    @Test
+    fun `no file made for this video keeps the clip time and downloads nothing`() = runTest {
+        val noName = Fake(emptyMap())
+        val plan = noName.check { testScheduler.currentTime }.run(target, null, emptyList(), { playing() }, { true }) { noName.seeks += it }
+        assertEquals("Kept the clip time: no subtitles for this video", plan.note)
+        assertEquals("the stream gives no file name, size or hash", plan.detail)
+        assertEquals(listOf<SubtitleRequestExtras?>(null), noName.asked)
+        val same = Fake(emptyMap(), forFileList = listOf(link(matched), link(forFile)))
+        val samePlan = same.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { same.seeks += it }
+        assertEquals("Kept the clip time: this video's subtitles are the file Nuvio matched with", samePlan.note)
+        assertTrue(noName.downloads.isEmpty() && same.downloads.isEmpty() && noName.seeks.isEmpty() && same.seeks.isEmpty())
+    }
+
+    @Test
+    fun `lines that are not in this video's subtitles keep the clip time`() = runTest {
+        val fake = Fake(mapOf(forFile to srt(cues(lines = ClipTestText.cueTexts(999, count = 80)))))
+        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { fake.seeks += it }
+        assertEquals("Kept the clip time: the clip's lines are not in this video's subtitles", plan.note)
+        assertTrue(fake.seeks.isEmpty())
+    }
+
+    @Test
+    fun `a player that never reaches the clip time is left alone after 60 s`() = runTest {
+        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))))
+        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { 0L }, { true }) { fake.seeks += it }
+        assertEquals("Kept the clip time: the player did not reach the clip time within 60 s", plan.note)
+        assertTrue(fake.seeks.isEmpty())
+    }
+
+    @Test
+    fun `which file is this video's`() {
+        val usual = link(matched)
+        val other = link("https://subs.example.test/other.srt")
+        val hashed = link("https://subs.example.test/hashed.srt", hash = true)
+        val french = ClipSubtitleLink("https://subs.example.test/fr.srt", "fre")
+        fun choose(forFile: List<ClipSubtitleLink>?, matchedUrl: String = matched) =
+            ClipPlayCheck.choose(emptyList(), forFile, listOf(usual, other), matchedUrl)
+        assertEquals(hashed, choose(listOf(other, hashed)).link)
+        assertEquals("Sample Subs: found by this file's hash", choose(listOf(other, hashed)).detail)
+        assertEquals(other, choose(listOf(french, other, usual)).link)
+        assertEquals("this video's subtitles are the file Nuvio matched with", choose(listOf(usual, other)).why)
+        // From an older cache the matched file is not known: the add-on's usual first file stands in for it.
+        assertNull(choose(listOf(usual, other), matchedUrl = "").link)
+        assertEquals("the add-ons gave their usual list, not one for this file", choose(listOf(usual), matchedUrl = other.url).detail)
+        assertEquals("the add-ons list no English subtitles for this file", choose(listOf(french)).detail)
+        assertEquals("the stream gives no file name, size or hash", choose(null).detail)
+    }
+
+    @Test
+    fun `the time, the speed and the shift limits in the note`() {
+        assertEquals("+3.2 s", ClipPlayCheck.signedSeconds(3_200))
+        assertEquals("-0.4 s", ClipPlayCheck.signedSeconds(-449))
+        assertEquals("; this video plays 4.3% faster", ClipPlayCheck.speedNote(23.976 / 25.0))
+        assertEquals("", ClipPlayCheck.speedNote(1.0))
+        val far = ClipAlign.Alignment(listOf(ClipAlign.Hit(100_000, 500_000), ClipAlign.Hit(104_000, 504_000)), 1.0)
+        assertEquals(
+            ClipPlayPlan(null, "Kept the clip time: the matching lines are 6:40 away, too far to trust", "d"),
+            ClipPlayCheck.decide(85_000, far, "d"),
+        )
+    }
+
+    @Test
+    fun `the player checks an answer once per launch, and only the launch it opened`() {
+        val answer = ClipAnswer(
+            ClipCandidate("tt001:2:5", 2, 5, 100_000, 140_000, 0.9, 20, true),
+            ShowGuess("tt001", "series", "Made Up Show"),
+            episode = ClipEpisode("tt001:2:5", "tt001:2:5", "series", 2, 5),
+            anchors = target.anchors,
+            subtitle = link(matched),
+        )
+        ClipPlayTargets.arm(answer, start)
+        assertEquals(target, ClipPlayTargets.forPlayer(7L, "tt001", 2, 5, start))
+        assertNull(ClipPlayTargets.forPlayer(7L, "tt001", 2, 5, start))
+        assertNull(ClipPlayTargets.forPlayer(8L, "tt001", 2, 5, 600_000))
+        assertNull(ClipPlayTargets.forPlayer(9L, "tt001", 2, 6, start))
+        assertNull(ClipPlayTargets.forPlayer(null, "tt001", 2, 5, start))
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipStreamRankTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import com.nuvio.app.features.player.SubtitleSyncCue
+import com.nuvio.app.features.streams.StreamBehaviorHints
+import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamSubtitle
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/** Made-up release names, groups and addresses only. */
+class ClipStreamRankTest {
+    private val englishSubs = listOf(StreamSubtitle("https://cdn.example.test/own.srt", "eng"))
+
+    private fun stream(name: String, title: String? = null, file: String? = null, hash: String? = null, subs: List<StreamSubtitle> = emptyList()) =
+        StreamItem(
+            name = name,
+            title = title,
+            addonName = "Sample",
+            addonId = "sample",
+            behaviorHints = StreamBehaviorHints(videoHash = hash, filename = file),
+            externalSubtitles = subs,
+        )
+
+    @Test
+    fun `a release name gives its source family, group and resolution`() {
+        assertEquals(ClipRelease("web", "GRP", "hd"), ClipRelease.of("Made.Up.Show.S02E05.720p.WEB-DL.x264-GRP.srt"))
+        assertEquals(ClipRelease("bluray", null, "hd"), ClipRelease.of("made up show 2x05 BluRay 1080p"))
+        assertEquals(ClipRelease("hdtv", "XYZ", null), ClipRelease.of("Made Up Show S02E05 HDTV-XYZ"))
+        assertEquals(ClipRelease("web", "GRP", "hd"), ClipRelease.of("Made Up Show S02E05 720p WEB-DL DDP5.1 H.264-GRP"))
+        assertEquals(ClipRelease(null, null, "uhd"), ClipRelease.of("Sample 4K"))
+        assertFalse(ClipRelease.of("12345678").known)
+        assertFalse(ClipRelease.of("").known)
+    }
+
+    private val bluray = stream("Sample 1080p", file = "Made.Up.Show.S02E05.1080p.BluRay.x264-OTHER.mkv")
+    private val sameRelease = stream("Sample 720p", title = "Made Up Show S02E05 720p WEB-DL DDP5.1 H.264-GRP\n1.2 GB")
+    private val noName = stream("Sample 4K")
+    private val otherWeb = stream("Sample 1080p", title = "Other", file = "Made.Up.Show.S02E05.1080p.WEB.h264-NEW.mkv")
+
+    @Test
+    fun `with the matched subtitle's release name the same release is pinned and tagged`() {
+        val pick = ClipStreamRank.pick(listOf(bluray, sameRelease, noName, otherWeb), "Made.Up.Show.S02E05.720p.WEB-DL.x264-GRP")
+        assertEquals(sameRelease, pick.pinned)
+        assertEquals(setOf(sameRelease), pick.tagged)
+        assertEquals("best match: 1 of 4 streams, same release as the matched subtitle (web, GRP, hd)", pick.note)
+        // Without it, the same source family and resolution are the next best thing.
+        assertEquals(otherWeb, ClipStreamRank.pick(listOf(bluray, noName, otherWeb), "Made.Up.Show.S02E05.720p.WEB-DL.x264-GRP").pinned)
+    }
+
+    @Test
+    fun `no stream of the matched subtitle's release leaves the list as it is`() {
+        val pick = ClipStreamRank.pick(listOf(bluray, sameRelease, noName, otherWeb), "Made Up Show S02E05 HDTV-XYZ")
+        assertNull(pick.pinned)
+        assertTrue(pick.tagged.isEmpty())
+        assertEquals("no stream has the matched subtitle's release (hdtv, XYZ); order unchanged", pick.note)
+    }
+
+    @Test
+    fun `without a release name the streams the player can check go first`() {
+        val ownSubs = stream("Sample A", subs = englishSubs)
+        val ownSubsToo = stream("Sample B", subs = englishSubs)
+        val hashed = stream("Sample C", hash = "0123456789abcdef")
+        val frenchOrLocal = stream("Sample D", subs = listOf(StreamSubtitle("https://cdn.example.test/fr.srt", "fre"), StreamSubtitle("file:///own.srt", "eng")))
+        val pick = ClipStreamRank.pick(listOf(noName, ownSubs, hashed, frenchOrLocal, ownSubsToo), "")
+        assertEquals(ownSubs, pick.pinned)
+        assertEquals(setOf(ownSubs, ownSubsToo), pick.tagged)
+        assertEquals("best match: 2 of 5 streams, own subtitles or a file hash (the matched subtitle has no release name)", pick.note)
+        assertEquals(hashed, ClipStreamRank.pick(listOf(noName, hashed, frenchOrLocal), "").pinned)
+        val none = ClipStreamRank.pick(listOf(noName, frenchOrLocal), "")
+        assertNull(none.pinned)
+        assertEquals("the matched subtitle has no release name and no stream has its own subtitles or a file hash; order unchanged", none.note)
+        assertNull(ClipStreamRank.pick(emptyList(), "").pinned)
+    }
+
+    @Test
+    fun `at most five streams are tagged`() {
+        val many = List(7) { stream("Sample $it", subs = englishSubs) }
+        assertEquals(ClipStreamRank.MAX_TAGS, ClipStreamRank.pick(many, "").tagged.size)
+    }
+
+    @Test
+    fun `a subtitle add-on's answer keeps the release name and the hash mark when they are sent`() {
+        val json = """
+            {"subtitles":[
+              {"id":"1","url":"https://subs.example.test/a.srt","lang":"eng","m":"h","SubEncoding":"UTF-8"},
+              {"id":"2","url":"https://subs.example.test/b.srt","lang":"fre","releaseName":"Made.Up.Show.S02E05.720p.WEB-DL-GRP"},
+              {"id":"3","lang":"eng"},
+              "not an entry"
+            ]}
+        """.trimIndent()
+        assertEquals(
+            listOf(
+                ClipSubtitleLink("https://subs.example.test/a.srt", "eng", source = "Sample Subs", hashMatch = true),
+                ClipSubtitleLink("https://subs.example.test/b.srt", "fre", source = "Sample Subs", release = "Made.Up.Show.S02E05.720p.WEB-DL-GRP"),
+            ),
+            ClipSubtitleList.parse(json, "Sample Subs"),
+        )
+        assertTrue(ClipSubtitleList.parse("not json", "Sample Subs").isEmpty())
+        assertTrue(ClipSubtitleList.parse("""{"streams":[]}""", "Sample Subs").isEmpty())
+    }
+
+    @Test
+    fun `the subtitle cache remembers which file the cues came from, and older entries say nothing`() {
+        val link = ClipSubtitleLink("https://subs.example.test/a.srt", "eng", source = "Sample\tSubs", release = "Made.Up.Show.S02E05")
+        val cues = listOf(SubtitleSyncCue(0, 1_000, "made up words here"))
+        val entry = EpisodeSubtitleSource.linkLine(link) + EpisodeSubtitleSource.encodeCues(cues)
+        assertEquals(link.copy(source = "Sample Subs"), EpisodeSubtitleSource.decodeLink(entry))
+        assertEquals(cues, EpisodeSubtitleSource.decodeCues(entry))
+        assertNull(EpisodeSubtitleSource.decodeLink(EpisodeSubtitleSource.encodeCues(cues)))
+    }
+}
+```
+
+##### File: `composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowPickerTest.kt`
+```kotlin
+package com.nuvio.app.features.clipfinder
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+
+/** Names, ids and addresses here are made up, except "Modern Family" as in the other Clip finder tests. */
+class ClipShowPickerTest {
+    private val remembered = ShowGuess("tt100", "series", "Modern Family")
+    private val family = ShowGuess("tt100", "series", "Modern Family", "https://img.example.test/mf.jpg", year = "2009")
+    private val tides = ShowGuess("tt777", "movie", "Modern Tides", year = "1990")
+    private val other = ShowGuess("tt003", "series", "Other Thing")
+    private val asked = mutableListOf<String>()
+
+    private fun picker(search: (String) -> List<ShowGuess> = { listOf(family, tides) }, known: () -> List<ShowGuess> = { listOf(other, remembered) }) =
+        ClipShowPicker({ query -> asked += query; search(query) }, { known() })
+
+    @Test
+    fun `a squashed name lists the known title with the catalog's poster and year, then other search results`() = runTest {
+        assertEquals(listOf(family, tides), picker().pick("  modernfam "))
+        assertEquals(listOf("modernfam"), asked)
+    }
+
+    @Test
+    fun `fewer than two letters list nothing and ask nothing`() = runTest {
+        assertTrue(picker().pick("m").isEmpty())
+        assertTrue(picker().pick(" ?! ").isEmpty())
+        assertTrue(asked.isEmpty())
+    }
+
+    @Test
+    fun `a failing search still lists the known titles`() = runTest {
+        assertEquals(listOf(remembered), picker(search = { error("offline") }).pick("Modern family"))
+        assertEquals(listOf(family, tides), picker(known = { error("broken") }).pick("modern"))
+    }
+
+    @Test
+    fun `at most eight picks, best first`() = runTest {
+        val many = List(12) { ShowGuess("tt2$it", "series", "Made Up Show $it") }
+        val picks = picker(search = { many }, known = { emptyList() }).pick("made up")
+        assertEquals(ClipShowPicker.MAX_PICKS, picks.size)
+        assertEquals("tt20", picks.first().metaId)
+    }
+
+    @Test
+    fun `a picked show is the only suspect and nothing is searched`() = runTest {
+        val searched = mutableListOf<String>()
+        val finder = ClipShowFinder({ query -> searched += query; listOf(other) }, { listOf(other) }, ClipMemory({ null }, {}, { 0L }))
+        val found = finder.find(ClipClues(typed = "modernfam", picked = family), emptyList())
+        assertEquals(listOf(ClipSuspect(family, ClipShowFinder.PICKED_SCORE, "picked")), found)
+        assertTrue(searched.isEmpty())
+    }
+
+    @Test
+    fun `the year and the kind under the name`() {
+        assertEquals("2009", clipYear("2009-2020"))
+        assertEquals("2009", clipYear("2009–"))
+        assertNull(clipYear(""))
+        assertNull(clipYear(null))
+        assertEquals("2009 · Series", clipPickDetail(family))
+        assertEquals("Movie", clipPickDetail(ShowGuess("tt9", "movie", "Made Up Film")))
+    }
+}
+```
+
+#### I. On the phone (after the Mac build), risks, and what the screen shows
+Try it (no new permission prompt):
+1. Share the Modern Family clip. When it asks, or after it answers, type "modern fam" in "Know the show?": within a
+   second the list shows Modern Family with poster and "2009 · Series". Tap it: "Searching" runs, "Listening" does
+   not. Details: `Matched subtitle: OpenSubtitles v3: no release name given` (expected, decision 1).
+2. Tap the answer, then look at the stream list: `Stream order` in Details (open Clip finder again to read it); a
+   "Best match for the clip" card on top only when that line starts "best match". A show opened from Home: no card.
+3. Tap a stream. Within about 20 s a toast: "Moved to the matching line ... (+x s)" or "Kept the clip time: <why>".
+   Details: `Player` (the same text) and `Player subtitles` (which file, or why none).
+4. Again, but seek away in the first seconds: no jump back; toast "Kept the clip time: you moved yourself".
+Send a screenshot of Details after each.
+
+Top ways it can fail, and what the screen then shows:
+1. `Player subtitles: the add-ons gave their usual list, not one for this file` every time: OpenSubtitles v3 ignores
+   the file name without a hash (iOS sends no hash of its own). The check then never moves; nothing is wrong, the
+   15 s lead-in carries it. Next step (Later): compute the OpenSubtitles hash on iOS, or test each stream's own file.
+2. A jump to a wrong place: the `Player` line shows the shift (refused above 5 min). Send it with the episode; the
+   anchors (4+ words, 2 agreeing pairs, half of all) are the tuning knob, in `ClipAlign` only.
+3. No toast at all: the player was not opened from the answer (another episode, "Resume" elsewhere) or the toast
+   host is behind the player; Details still has `Player`. No `Player` line either: the launch did not match (start
+   time changed on the way), see `ClipPlayTargets.forPlayer`.
+4. "the player did not reach the clip time within 60 s": the player started somewhere else (its own resume) or
+   buffered for a minute; nothing was moved.
+5. The pick list stays empty: the catalogs did not answer; the "Search this show" button still works as before.
+
+ASSUMPTIONS (cannot be checked from here)
+- E1 The Kotlin compiles; it only uses what is listed in section B.
+- E2 OpenSubtitles v3's answer shape of decision 1 (about 80% sure); `Matched subtitle` and `Player subtitles` show
+  the truth on the phone.
+- E3 `initialSeekApplied` turns true once the player's own first seek is done and `playbackSnapshot.positionMs`
+  follows playback (read in `PlayerScreenRuntimeState.kt`, not run).
+- E4 `NuvioToastController` toasts show above the player.
+- E5 `StreamsScreen` shows any non-null `LocalSharedStream` as a header and a card on top (read, not run).
+- E6 With an external player (VLC, Infuse) Nuvio's player does not open, so nothing is checked: the 15 s lead-in only.
+
 ## Later (parked, not v1)
 - "Listen" mode: Nuvio records ~10 s of any app's sound through iOS screen broadcast. Works
   for every app and never breaks when a site changes, but takes more taps.
@@ -9856,3 +12046,7 @@ ASSUMPTIONS (cannot be checked from here)
   (all three `Instagram` tries say `video key no`); another YouTube captions route if every video says `captions
   need YouTube's token`; YouTube captions in other languages (with milestone 8); split `ClipFinderPipeline.kt`
   (341 lines) by moving the native `call` into its own file.
+- From 7e: compute the OpenSubtitles file hash on iOS (`computeVideoHash` returns null there), so the add-ons can
+  name this video's own subtitle file (when `Player subtitles` keeps saying "their usual list"); check each stream's own
+  subtitle file before playing instead of after; a real reorder of the stream list by best match (needs a
+  `StreamsScreen` edit).

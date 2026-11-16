@@ -30,6 +30,14 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
   caption names a show, it offers that show's page.
 - Speed: first measure (a timings line in Details), then do work while the clip is listened to.
 
+## Decisions (Mo, 2026-11-16, after 7c-7d)
+- Typing the show gives a list to tap (poster, name, year, type); a tap searches exactly that show.
+- The clip time is checked against the subtitles of the stream Mo picks and corrected once, never after he seeks.
+- Streams that best match the clip are marked, only in lists opened from Clip finder. OpenSubtitles v3 sends no
+  release name, so the plan (PLAN 7e, decision 2) marks the streams the player can check instead (own subtitles, a
+  file hash) unless an add-on sends a release name; Mo to confirm on the phone.
+- Playback starts 15 s before the moment (was 10 s).
+
 ## Features
 1. The user can pick Nuvio in the share sheet for a TikTok or Instagram link.
    Check: Nuvio opens on the Clip finder screen showing that link.
@@ -39,13 +47,14 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
    Check: each stage appears and none hangs longer than 60 s without a message.
 4. The user sees up to 3 candidates (show, season, episode, time, confidence).
    Check: for each of Mo's 3 test clips the right episode is the top candidate.
-5. The user can tap a candidate, pick a stream as usual, and playback starts about 10 s before
-   the matched moment. Check: on the 3 test clips the scene is on screen within 20 s of starting.
+5. The user can tap a candidate, pick a stream as usual, and playback starts about 15 s before
+   the matched moment (corrected for the picked stream where feature 23 can). Check: on the 3 test clips the scene
+   is on screen within 20 s of starting.
 6. The user can choose "from clip start" or "after the clip" (default: after the clip).
    Check: both start points differ by the clip's length.
 7. If the show can't be guessed (or the guess is wrong), the user can type the show name and the rest stays
    automatic. Check: a clip with an empty caption still reaches the right episode after typing the show, and
-   the "Listening" step does not run a second time.
+   the "Listening" step does not run a second time. Typing shows a pick list (feature 22).
 8. If nothing matches, the user is told why (no speech found, no subtitles found, no match) and
    nothing plays. Check: a music-only clip ends with "no speech found".
 9. Works for movies as well as series. Check: one movie test clip finds its moment.
@@ -84,6 +93,19 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
 21. Work is done while the clip is listened to. Checks: (unit) when the page names a show at score 90+, its
     subtitle files are fetched during listening and none is fetched twice; YouTube is asked during listening;
     (phone) Details shows `Fetched while listening`.
+22. Typing the show gives a pick list. Checks: (unit) "modernfam" lists the known Modern Family with the catalog's
+    poster and year first; fewer than 2 letters ask nothing; a failing search still lists known titles; at most 8; a
+    picked show is the only one searched and nothing is listened to again. (phone) typing "modern fam" shows Modern
+    Family with poster and year within a second of the last key, and a tap reaches the episode.
+23. Playback lands on the clip's moment in the picked stream. Checks: (unit, made-up subtitles) a release 3.2 s
+    later is moved by +3.2 s; a 4% speed difference is found from lines far apart; other words or a repeated line
+    never move anything; the player is moved at most once, only after it reached the clip time, and never after Mo
+    moved himself; no subtitles for this video keeps the clip time. (phone) after every play from an answer a toast
+    and Details (`Player`, `Player subtitles`) say whether it moved, by how much, and which file was used.
+24. Streams that best match the clip are marked, only in lists opened from Clip finder. Checks: (unit) with a
+    release name the same release is pinned and tagged; without one, streams with their own English subtitles or a
+    file hash are; with neither the list is unchanged and says why. (phone) a list opened from a show page is
+    unchanged; one opened from Clip finder has a `Stream order` line in Details that matches what is pinned.
 
 ## Out of scope (v1)
 - Android, iPad layout, desktop.
@@ -101,7 +123,8 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
   against the platforms' terms (automated reading). Mo approved "link first" on 2026-11-15.
   If it breaks, features 1 to 9 still work through the saved video file.
 - A3. Subtitle timing differs between releases by a few seconds, sometimes more. That is why
-  playback starts 10 s early and the check in feature 5 is 20 s, not exact.
+  playback starts 15 s early, the start is corrected per stream where possible (feature 23), and the check in
+  feature 5 is 20 s, not exact.
 - A4. Clips are often sped up, cut or mirrored. The matcher ignores order and speed; mirrored
   burned-in captions are not read.
 - A5. Opening the app from a share extension is not an official Apple feature. Fallback: the
