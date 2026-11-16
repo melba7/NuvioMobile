@@ -5997,10 +5997,10 @@ index 0000000..a8053e7
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt
 new file mode 100644
-index 0000000..6710d3b
+index 0000000..c45f971
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPlayCheckTest.kt
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,214 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleRequestExtras
@@ -6047,13 +6047,14 @@ index 0000000..6710d3b
 +        val files: Map<String, String>,
 +        val forFileList: List<ClipSubtitleLink> = listOf(link(forFile), link(matched)),
 +        val downloadMs: Long = 0,
++        val listMs: Long = 0,
 +    ) {
 +        val asked = mutableListOf<SubtitleRequestExtras?>()
 +        val downloads = mutableListOf<String>()
 +        val seeks = mutableListOf<Long>()
 +
 +        fun check(now: () -> Long) = ClipPlayCheck(
-+            listSubtitles = { _, _, given -> asked += given; if (given == null) listOf(link(matched)) else forFileList },
++            listSubtitles = { _, _, given -> asked += given; delay(listMs); if (given == null) listOf(link(matched)) else forFileList },
 +            download = { url -> downloads += url; delay(downloadMs); files.getValue(url) },
 +            now = now,
 +            work = EmptyCoroutineContext,
@@ -6132,7 +6133,8 @@ index 0000000..6710d3b
 +
 +    @Test
 +    fun `a check that finishes long after the clip time does not pull the player back`() = runTest {
-+        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))), downloadMs = 50_000)
++        // Within the list (12 s) and file (15 s) limits, but done 24 s in: the player is 23 s past the clip time.
++        val fake = Fake(mapOf(forFile to srt(cues(shiftMs = 3_200))), downloadMs = 14_000, listMs = 10_000)
 +        val plan = fake.check { testScheduler.currentTime }.run(target, extras, emptyList(), { playing() }, { true }) { fake.seeks += it }
 +        assertTrue(fake.seeks.isEmpty())
 +        assertEquals("Kept the clip time: the check finished too late", plan.note)
