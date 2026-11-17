@@ -5,3 +5,8 @@
 - A hit must be vouched for by a different triple from a different cue, or one repeated line validates itself.
 - Without Kotlin or Gradle here, port the matcher to a throwaway Python script to check test numbers before pushing; one CI run costs 7 min.
 - Compilations need every substantial cluster (4+ hits, 3+ cues), not a share-of-hits cut: a cut drops real segments and collapses confidence.
+- Caption tests must copy the shape of real captions (hashtags glued to emoji, "Modern family" half capitalised, filler tags like #movieedit): the tidy made-up captions of milestone 6 passed while the first real one found nothing.
+- Sites blocked in the cloud workspace: read how an open-source tool reads them (`pip download yt-dlp youtube-transcript-api`, read the source, never run it) and write each key's confidence in the plan; the phone's Details lines settle it.
+- "Slow" cannot be fixed without a per-stage timing line in Details: add measurement before speedups, and write each speedup as a hypothesis to confirm.
+- Before planning on a field, check that the source really sends it: OpenSubtitles v3 gives only id, url and lang (no release name) and iOS never computes the video hash, so "same release" ranking had to become "what the player can check".
+- 2026-11-17: a mass helper rename by a subagent deleted closing braces in 3 files; push to the PR early so Fork check compiles it, before reviewing logic.

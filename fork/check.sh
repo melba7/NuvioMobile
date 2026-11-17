@@ -39,7 +39,7 @@ if [ -z "${CI:-}" ]; then
 fi
 
 # (b) tests: Android host test task (the only JVM test target); -x filters keep it small
-TESTS=(--tests 'com.nuvio.app.core.deeplink.*')
+TESTS=(--tests 'com.nuvio.app.core.deeplink.*' --tests 'com.nuvio.app.features.downloads.core.*')
 if [ -d "$TREE/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder" ]; then
   TESTS+=(--tests 'com.nuvio.app.features.clipfinder.*')
 fi
