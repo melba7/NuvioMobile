@@ -9,3 +9,4 @@
 - Sites blocked in the cloud workspace: read how an open-source tool reads them (`pip download yt-dlp youtube-transcript-api`, read the source, never run it) and write each key's confidence in the plan; the phone's Details lines settle it.
 - "Slow" cannot be fixed without a per-stage timing line in Details: add measurement before speedups, and write each speedup as a hypothesis to confirm.
 - Before planning on a field, check that the source really sends it: OpenSubtitles v3 gives only id, url and lang (no release name) and iOS never computes the video hash, so "same release" ranking had to become "what the player can check".
+- 2026-11-17: a mass helper rename by a subagent deleted closing braces in 3 files; push to the PR early so Fork check compiles it, before reviewing logic.
