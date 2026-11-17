@@ -29,6 +29,11 @@ The rest of this branch is upstream's code and is not used by the build.
   a newer iOS release and the patches still apply, it moves `fork/UPSTREAM_TAG` and starts the
   TestFlight build. When they don't apply, it opens an issue (or, with Issues off, fails with
   the reason, which GitHub emails you).
+- **TestFlight refresh** (`.github/workflows/testflight-refresh.yml`): every week. TestFlight
+  builds expire after 90 days, so once the last successful TestFlight build is 60 days old it
+  starts a new one. It also switches the scheduled workflows on again, because GitHub turns them
+  off in a public repository after 60 days without activity. Run it by hand with "force" ticked
+  for a fresh build at once. Keep Automatic Updates on for Nuvio in the TestFlight app.
 
 ## One-time setup
 
