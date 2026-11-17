@@ -665,10 +665,10 @@ index 0000000..fe1e422
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 new file mode 100644
-index 0000000..4943336
+index 0000000..e5dc7ef
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
-@@ -0,0 +1,337 @@
+@@ -0,0 +1,338 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -980,6 +980,7 @@ index 0000000..4943336
 +                        end(NativeResult(error = message, failedStage = stage))
 +                })
 +            }
++    }
 +
 +    companion object {
 +        const val PAGE_TIMEOUT_MS = 45_000L
@@ -1118,10 +1119,10 @@ index 0000000..88cf168
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt
 new file mode 100644
-index 0000000..298cce1
+index 0000000..28b1aa5
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,234 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.addons.AddonRepository
@@ -1203,6 +1204,9 @@ index 0000000..298cce1
 +     */
 +    fun stop() {
 +        if (job?.isActive != true) return
++        // The job can still be closing (YouTube, prefetch) after the answer or failure was shown: keep that result.
++        val shown = _state.value
++        if (shown.failed || shown.stage == ClipStage.Done) return
 +        job?.cancel()
 +        runId++
 +        _state.value = ClipFinderState()
@@ -1491,12 +1495,11 @@ index 0000000..679b5a3
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipInstagram.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipInstagram.kt
 new file mode 100644
-index 0000000..b4e0606
+index 0000000..d85069e
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipInstagram.kt
 @@ -0,0 +1,136 @@
 +package com.nuvio.app.features.clipfinder
-+
 +
 +/**
 + * Instagram without a login. A logged-out reel page often has no video address (phone test, 2026-11-16:
@@ -1631,6 +1634,7 @@ index 0000000..b4e0606
 +    private fun size(text: String): String = "${text.length / 1024} KB"
 +
 +    private fun yesNo(value: Boolean): String = if (value) "yes" else "no"
++}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
 new file mode 100644
 index 0000000..2039549
@@ -2794,10 +2798,10 @@ index 0000000..d870400
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
 new file mode 100644
-index 0000000..22a42bf
+index 0000000..3eb399a
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
-@@ -0,0 +1,160 @@
+@@ -0,0 +1,163 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlinx.coroutines.async
@@ -2825,7 +2829,10 @@ index 0000000..22a42bf
 +) {
 +    private val searches = mutableListOf<String>()
 +
-+    /** Answers of searches that worked, so the prefetch and the real search do not ask the catalogs twice. A failed one is asked again. */
++    /**
++     * Answers of searches that found something, so the prefetch and the real search do not ask the catalogs twice.
++     * A failed or empty one is asked again: [clipSearchShows] gives an empty list when every catalog timed out.
++     */
 +    private val answered = mutableMapOf<String, List<ShowGuess>>()
 +
 +    /** [onNote] gets diagnostic lines for the screen: how many titles were known, and every search with its result count. */
@@ -2945,7 +2952,7 @@ index 0000000..22a42bf
 +    private suspend fun safeSearch(query: String): List<ShowGuess> {
 +        val text = query.trim()
 +        if (text.length < 3) return emptyList()
-+        val results = answered[text] ?: clipQuietly { search(text) }?.also { answered[text] = it }
++        val results = answered[text] ?: clipQuietly { search(text) }?.also { if (it.isNotEmpty()) answered[text] = it }
 +        searches += "\"$text\": " + (results?.size?.toString() ?: "failed")
 +        return results.orEmpty()
 +    }
@@ -3021,10 +3028,10 @@ index 0000000..67e7526
 +    listOfNotNull(show.year, if (show.type == "movie") "Movie" else "Series").joinToString(" · ")
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
 new file mode 100644
-index 0000000..9cb40be
+index 0000000..c68c40f
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,125 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -3149,6 +3156,7 @@ index 0000000..9cb40be
 +        val share = if (heard == 0) 0 else top.hits * 100 / heard
 +        return "${top.hits} shared phrases of $heard heard ($share%), next best ${candidates.getOrNull(1)?.hits ?: 0}"
 +    }
++}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipStreamRank.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipStreamRank.kt
 new file mode 100644
 index 0000000..3fbbbec
@@ -4116,10 +4124,10 @@ index 0000000..7d7dfec
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRules.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRules.kt
 new file mode 100644
-index 0000000..aa1e7b0
+index 0000000..82fe87c
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRules.kt
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +package com.nuvio.app.features.downloads.core
 +
 +/** Pure checks on a finished download: an HTTP 200 is not enough to call the file a video. */
@@ -4138,8 +4146,10 @@ index 0000000..aa1e7b0
 +        actualBytes != null && expectedBytes != null &&
 +            expectedBytes >= EXPECTED_MIN_BYTES && actualBytes < PLACEHOLDER_MAX_BYTES
 +
++    /** A wrong type alone is not enough for a large file: some hosts label real videos text/plain. */
 +    fun isBadFile(mimeType: String?, actualBytes: Long?, expectedBytes: Long?): Boolean =
-+        isNotAVideo(mimeType) || looksLikePlaceholder(actualBytes, expectedBytes)
++        (isNotAVideo(mimeType) && (actualBytes == null || actualBytes < PLACEHOLDER_MAX_BYTES)) ||
++            looksLikePlaceholder(actualBytes, expectedBytes)
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/DownloadStateMachine.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/downloads/core/DownloadStateMachine.kt
 index 4d08a49..7d35bf2 100644
@@ -6368,10 +6378,10 @@ index 0000000..1408040
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
 new file mode 100644
-index 0000000..088123b
+index 0000000..1b6b16e
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
-@@ -0,0 +1,186 @@
+@@ -0,0 +1,197 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.cancellation.CancellationException
@@ -6467,7 +6477,7 @@ index 0000000..088123b
 +
 +    @Test
 +    fun `asking again with the same clues asks each query once`() = runTest {
-+        val subject = finder(search = { emptyList() })
++        val subject = finder(search = { listOf(other) })
 +        val clues = ClipClues(caption = phoneCaption)
 +        subject.find(clues, emptyList())
 +        val first = asked.size
@@ -6475,6 +6485,17 @@ index 0000000..088123b
 +        subject.find(clues, emptyList())
 +        assertEquals(first, asked.size, "the second find must answer from what the first one learned")
 +        assertEquals(asked.toSet().size, asked.size)
++    }
++
++    @Test
++    fun `an empty answer is asked again`() = runTest {
++        val subject = finder(search = { emptyList() })
++        val clues = ClipClues(caption = phoneCaption)
++        subject.find(clues, emptyList())
++        val first = asked.size
++        assertTrue(first > 0)
++        subject.find(clues, emptyList())
++        assertEquals(asked.take(first), asked.drop(first))
 +    }
 +
 +    @Test
@@ -7406,10 +7427,10 @@ index 0000000..abe14f7
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRulesTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRulesTest.kt
 new file mode 100644
-index 0000000..4be3aec
+index 0000000..7e031dd
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/downloads/core/CompletedFileRulesTest.kt
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,53 @@
 +package com.nuvio.app.features.downloads.core
 +
 +import kotlin.test.Test
@@ -7445,7 +7466,14 @@ index 0000000..4be3aec
 +    fun htmlAndJsonAreNotVideos() {
 +        assertTrue(CompletedFileRules.isNotAVideo("text/html; charset=utf-8"))
 +        assertTrue(CompletedFileRules.isNotAVideo("Application/JSON"))
-+        assertTrue(CompletedFileRules.isBadFile("text/html", 5 * gb, null))
++        assertTrue(CompletedFileRules.isBadFile("text/html", 40 * 1024L, null))
++        assertTrue(CompletedFileRules.isBadFile("application/json", null, 2 * gb))
++    }
++
++    @Test
++    fun largeFileWithWrongTypeIsKept() {
++        assertFalse(CompletedFileRules.isBadFile("text/plain", 2 * gb, 2 * gb))
++        assertFalse(CompletedFileRules.isBadFile("text/html", 5 * gb, null))
 +    }
 +
 +    @Test
@@ -7613,7 +7641,7 @@ index 5ce0c2b..47d6745 100644
  }
  
 diff --git a/composeApp/src/iosMain/kotlin/com/nuvio/app/features/downloads/IosBackgroundDownloads.kt b/composeApp/src/iosMain/kotlin/com/nuvio/app/features/downloads/IosBackgroundDownloads.kt
-index 8c3ab35..61edc57 100644
+index 8c3ab35..5902584 100644
 --- a/composeApp/src/iosMain/kotlin/com/nuvio/app/features/downloads/IosBackgroundDownloads.kt
 +++ b/composeApp/src/iosMain/kotlin/com/nuvio/app/features/downloads/IosBackgroundDownloads.kt
 @@ -1,6 +1,7 @@
@@ -7665,11 +7693,13 @@ index 8c3ab35..61edc57 100644
      private fun onResumeDataProduced(id: String, data: NSData?) {
          val stop = stops[id]
          if (stop == null) {
-@@ -656,11 +670,14 @@ internal object IosBackgroundDownloads {
+@@ -656,11 +670,16 @@ internal object IosBackgroundDownloads {
                  IosDownloadRecordStore.resumeData(id) == null
              ) {
                  IosDownloadRecordStore.saveResumeData(id, data)
-+            } else {
++            } else if (record == null || id in tombstones) {
++                // Only when the download is gone: otherwise the data may point at the same partial file as the
++                // resume data already stored from the task error, or at the file a restarted task now uses.
 +                disposeResumeData(data)
              }
              return
@@ -7680,7 +7710,7 @@ index 8c3ab35..61edc57 100644
              return
          }
          // "No data" must not erase resume data that already arrived through the task error.
-@@ -703,6 +720,7 @@ internal object IosBackgroundDownloads {
+@@ -703,6 +722,7 @@ internal object IosBackgroundDownloads {
          listeners.remove(id)
          madeProgress.remove(id)
          throttle.reset(id)
@@ -7688,7 +7718,7 @@ index 8c3ab35..61edc57 100644
          IosDownloadRecordStore.remove(id)
      }
  
-@@ -738,9 +756,17 @@ internal object IosBackgroundDownloads {
+@@ -738,9 +758,17 @@ internal object IosBackgroundDownloads {
              return
          }
  
@@ -7707,7 +7737,7 @@ index 8c3ab35..61edc57 100644
          val moved = source != null && NSFileManager.defaultManager.moveItemAtPath(
              srcPath = source,
              toPath = destination,
-@@ -806,6 +832,8 @@ internal object IosBackgroundDownloads {
+@@ -806,6 +834,8 @@ internal object IosBackgroundDownloads {
                  httpStatus = outcome.status,
                  errorText = null,
              )
@@ -7716,21 +7746,15 @@ index 8c3ab35..61edc57 100644
              else -> failRecord(record, DlFailureKind.Storage, httpStatus = null, errorText = FINALIZE_FAILED_MARKER)
          }
      }
-@@ -815,8 +843,12 @@ internal object IosBackgroundDownloads {
+@@ -815,6 +845,8 @@ internal object IosBackgroundDownloads {
          val userInfo = error.userInfo
          val resumeData = userInfo["NSURLSessionDownloadTaskResumeData"] as? NSData
          val stop = stops[id]
--        if (resumeData != null && IosDownloadRecordStore.resumeData(id) == null) {
--            IosDownloadRecordStore.saveResumeData(id, resumeData)
-+        if (resumeData != null) {
-+            if (IosDownloadRecordStore.resumeData(id) == null) {
-+                IosDownloadRecordStore.saveResumeData(id, resumeData)
-+            } else {
-+                disposeResumeData(resumeData)
-+            }
++        // Resume data already stored came from this same stop (cancelByProducingResumeData) and points at the same
++        // partial file, so the copy in the error is not disposed: that would delete the paused download's file.
+         if (resumeData != null && IosDownloadRecordStore.resumeData(id) == null) {
+             IosDownloadRecordStore.saveResumeData(id, resumeData)
          }
-         val cancelReason = userInfo["NSURLErrorBackgroundTaskCancelledReasonKey"].asIntOrNull()
- 
 @@ -881,6 +913,7 @@ internal object IosBackgroundDownloads {
              }
  
