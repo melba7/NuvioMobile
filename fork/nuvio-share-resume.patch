@@ -11,10 +11,10 @@ index 78fb6c3..34738d4 100644
              subclass(AddonsSettingsRoute::class, AddonsSettingsRoute.serializer())
              subclass(PluginsSettingsRoute::class, PluginsSettingsRoute.serializer())
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
-index 41bcb0f..2325fae 100644
+index 3ed1e65..6712d5a 100644
 --- a/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/MainAppContent.kt
-@@ -90,6 +90,9 @@ import com.nuvio.app.features.addons.AddonRepository
+@@ -91,6 +91,9 @@ import com.nuvio.app.features.addons.AddonRepository
  import com.nuvio.app.features.addons.enabledAddons
  import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
  import com.nuvio.app.features.catalog.CatalogTarget
@@ -24,7 +24,7 @@ index 41bcb0f..2325fae 100644
  import com.nuvio.app.features.cloud.CloudLibraryContentType
  import com.nuvio.app.features.cloud.CloudLibraryFile
  import com.nuvio.app.features.cloud.CloudLibraryItem
-@@ -774,6 +777,16 @@ internal fun MainAppContent(
+@@ -782,6 +785,16 @@ internal fun MainAppContent(
                          AppDeepLinkRepository.markConsumed(deepLink)
                      }
  
@@ -41,7 +41,7 @@ index 41bcb0f..2325fae 100644
                      null -> Unit
                  }
              }
-@@ -1082,6 +1095,28 @@ internal fun MainAppContent(
+@@ -1090,6 +1103,28 @@ internal fun MainAppContent(
              )
          }
  
@@ -70,7 +70,7 @@ index 41bcb0f..2325fae 100644
          val onPlay: ContentPlayAction =
              { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
                  launchPlaybackWithDownloadPreference(
-@@ -1698,6 +1733,11 @@ internal fun MainAppContent(
+@@ -1719,6 +1754,11 @@ internal fun MainAppContent(
                          }
                      }
                  }
@@ -83,7 +83,7 @@ index 41bcb0f..2325fae 100644
                      SettingsDestination(route, navController) { onBack ->
                          PartyScreen(
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/StreamDestination.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/StreamDestination.kt
-index 70ea185..d1aab99 100644
+index f718b5c..184f377 100644
 --- a/composeApp/src/commonMain/kotlin/com/nuvio/app/StreamDestination.kt
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/StreamDestination.kt
 @@ -57,6 +57,9 @@ import com.nuvio.app.features.party.matches
@@ -96,7 +96,7 @@ index 70ea185..d1aab99 100644
  import com.nuvio.app.features.streams.SharedStream
  
  private data class PendingP2pStreamOpen(
-@@ -806,11 +809,15 @@ internal fun StreamDestination(
+@@ -808,11 +811,15 @@ internal fun StreamDestination(
              ?.takeIf { !isHost && it.mediaKey == contentKey }
              ?.let { SharedStream(label = sharedLabel, stream = it.toStreamItem()) }
      }
@@ -114,7 +114,7 @@ index 70ea185..d1aab99 100644
          ) {
              StreamsScreen(
                  showLoadingScreen = showLoadingScreen,
-@@ -834,8 +841,8 @@ internal fun StreamDestination(
+@@ -836,8 +843,8 @@ internal fun StreamDestination(
                  onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
                      openSelectedStream(
                          stream = stream,
@@ -125,7 +125,7 @@ index 70ea185..d1aab99 100644
                          forceExternal = false,
                          forceInternal = false,
                          saveForReuse = stream != sharedStream?.stream,
-@@ -844,8 +851,8 @@ internal fun StreamDestination(
+@@ -846,8 +853,8 @@ internal fun StreamDestination(
                  onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
                      openSelectedStream(
                          stream = stream,
