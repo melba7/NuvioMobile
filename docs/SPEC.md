@@ -50,7 +50,7 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
 5. The user can tap a candidate, pick a stream as usual, and playback starts about 15 s before
    the matched moment (corrected for the picked stream where feature 23 can). Check: on the 3 test clips the scene
    is on screen within 20 s of starting.
-6. The user can choose "from clip start" or "after the clip" (default: after the clip).
+6. The user can choose "from clip start" or "after the clip" (default: from clip start; Mo, 2026-11-17).
    Check: both start points differ by the clip's length.
 7. If the show can't be guessed (or the guess is wrong), the user can type the show name and the rest stays
    automatic. Check: a clip with an empty caption still reaches the right episode after typing the show, and
