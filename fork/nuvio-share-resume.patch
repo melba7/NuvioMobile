@@ -665,10 +665,10 @@ index 0000000..fe1e422
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 new file mode 100644
-index 0000000..e5dc7ef
+index 0000000..52e24eb
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,388 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -677,6 +677,7 @@ index 0000000..e5dc7ef
 +import kotlinx.coroutines.CoroutineScope
 +import kotlinx.coroutines.Deferred
 +import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
 +import kotlinx.coroutines.async
 +import kotlinx.coroutines.cancelAndJoin
 +import kotlinx.coroutines.coroutineScope
@@ -689,7 +690,9 @@ index 0000000..e5dc7ef
 +/**
 + * The whole run for one shared clip: read the link (for Instagram also the post's other pages), listen,
 + * then search episodes; YouTube is searched beside it. While the clip is listened to, the show the page
-+ * names is already fetched ([ClipPrefetch]) and YouTube already searched. Everything that touches the
++ * names is already fetched ([ClipPrefetch]), YouTube already searched, and once the first part is heard the
++ * show search runs on those lines to fill the caches (the real search later uses all lines and decides).
++ * A finished episode answer is shown at once; the YouTube card is added when YouTube is done. Everything that touches the
 + * phone or the network is passed in, so this is tested with fakes. Call [run] from the main thread;
 + * [emit] may be called from another thread.
 + */
@@ -736,7 +739,7 @@ index 0000000..e5dc7ef
 +            shows = emptyList(),
 +            clues = previous.clues.copy(typed = typed.trim().take(MAX_TYPED), picked = picked),
 +        )
-+        guarded(Run(start, emit)) { it.search(null, null) }
++        guarded(Run(start, emit)) { it.search(null, null, mutableSetOf()) }
 +    }
 +
 +    private suspend fun guarded(run: Run, block: suspend (Run) -> Unit) {
@@ -825,10 +828,27 @@ index 0000000..e5dc7ef
 +        ) {
 +            val prefetch = if (isFile) null else ClipPrefetch(finder, loadEpisodes, subtitles)
 +            val early = prefetch?.let { pre -> scope.launch { beside("prefetch", { "${pre.fetched.size} files" }) { pre.run(pageClues) } } }
++            val warm = mutableSetOf<String>()
++            var warmUp: Job? = null
 +            var tube = if (isFile) null else startTube(scope, pageClues)
 +            try {
-+                val heard = withTimeoutOrNull(LISTEN_TIMEOUT_MS) { call { phone.listen(mediaUrls, pageUrl, it) } }
++                // The first part heard is enough to start the show search beside listening; it only fills the caches.
++                val heard = withTimeoutOrNull(LISTEN_TIMEOUT_MS) {
++                    call(onPart = { partLines, partScreen ->
++                        val enough = partLines.sumOf { ClipText.normalize(it.text).size } >= MIN_WORDS
++                        if (enough) {
++                            val partClues = pageClues.copy(screenText = partScreen)
++                            warmUp = scope.launch {
++                                beside("search while listening", { "${warm.size} files" }) {
++                                    showSearch.run(partClues, partLines, prefetch, warm, ClipTimings(now), { _, _ -> }) { }
++                                }
++                            }
++                        }
++                        enough
++                    }) { phone.listen(mediaUrls, pageUrl, it) }
++                }
 +                early?.cancelAndJoin()
++                warmUp?.cancelAndJoin()
 +                val fetchedShow = prefetch?.show
 +                if (prefetch != null && fetchedShow != null) {
 +                    note("Fetched while listening", "${fetchedShow.name}: ${prefetch.fetched.size} subtitle files")
@@ -844,47 +864,66 @@ index 0000000..e5dc7ef
 +                note("Text on screen", clues.screenText.joinToString(" | ").ifBlank { "none" }.take(200))
 +                if (lines.sumOf { ClipText.normalize(it.text).size } < MIN_WORDS) return offerShows(clues, ClipMessages.NO_SPEECH)
 +                if (tube == null) tube = startTube(scope, clues)
-+                search(prefetch, tube)
++                search(prefetch, tube, warm)
 +            } finally {
 +                early?.cancel()
++                warmUp?.cancel()
 +                tube?.cancel()
 +            }
 +        }
 +
 +        /** 3. Searching episodes (and checking the YouTube videos), from the clues and lines in the state. */
-+        suspend fun search(prefetch: ClipPrefetch?, tube: Deferred<List<ClipVideo>>?) {
++        suspend fun search(prefetch: ClipPrefetch?, tube: Deferred<List<ClipVideo>>?, warm: MutableSet<String>) {
 +            val clues = state.value.clues
 +            val lines = state.value.lines
 +            if (clues.typed.isNotBlank()) note("Show typed", clues.typed)
 +            if (state.value.noClip) return showsOnly(clues)
 +            change { it.copy(stage = ClipStage.Searching, progress = "Working out the show") }
-+            val outcome = showSearch.run(clues, lines, prefetch, timings, { label, value -> note(label, value) }) { text ->
++            val outcome = showSearch.run(clues, lines, prefetch, warm, timings, { label, value -> note(label, value) }) { text ->
 +                change { it.copy(progress = text) }
 +            }
-+            var videos = state.value.youtube
-+            if (tube != null) {
-+                change { it.copy(progress = "Checking the YouTube videos") }
-+                val found = tube.await()
-+                timings.lap("YouTube wait")
-+                videos = ClipYouTube.verify(found, lines)
-+                if (found.isNotEmpty()) note("YouTube match", ClipYouTube.matchNote(videos, found.count { it.cues.isNotEmpty() }))
-+            }
 +            val answers = outcome.answers
-+            if (answers.isEmpty() && (videos.isEmpty() || clues.typed.isNotBlank())) {
++            if (answers.isNotEmpty()) {
++                // The episode answer does not wait for YouTube: it is shown now, the YouTube card is added when that is done.
++                change {
++                    it.copy(stage = ClipStage.Done, answers = answers, progress = "").withNote("Timings", timings.line())
++                }
++                // A confident match is remembered (show and poster only), so the next clip of this show or poster starts there.
++                val top = answers.first()
++                if (top.candidate.confident) runCatching { memory.remember(clues.author, top.show) }
++                if (tube != null) {
++                    val videos = verified(tube, lines)
++                    change {
++                        it.copy(youtube = videos, openYouTube = opens(clues, videos, answers)).withNote("Timings", timings.line())
++                    }
++                }
++                return
++            }
++            if (tube != null) change { it.copy(progress = "Checking the YouTube videos") }
++            val videos = if (tube != null) verified(tube, lines) else state.value.youtube
++            if (videos.isEmpty() || clues.typed.isNotBlank()) {
 +                change { it.copy(youtube = videos) }
 +                return fail(outcome.failure ?: ClipMessages.NO_MATCH)
 +            }
-+            // Opens by itself only on a first run (not after a typed name) and only for a strong match.
-+            val open = clues.typed.isBlank() && videos.firstOrNull()?.let { it.candidate.confidence >= OPEN_MIN_CONFIDENCE } == true &&
-+                answers.none { it.candidate.confident }
 +            change {
-+                it.copy(stage = ClipStage.Done, answers = answers, youtube = videos, openYouTube = open, progress = "")
++                it.copy(stage = ClipStage.Done, answers = answers, youtube = videos, openYouTube = opens(clues, videos, answers), progress = "")
 +                    .withNote("Timings", timings.line())
 +            }
-+            // A confident match is remembered (show and poster only), so the next clip of this show or poster starts there.
-+            val top = answers.firstOrNull()
-+            if (top != null && top.candidate.confident) runCatching { memory.remember(clues.author, top.show) }
 +        }
++
++        /** Waits for the YouTube search and keeps the videos whose captions hold what was heard. */
++        private suspend fun verified(tube: Deferred<List<ClipVideo>>, lines: List<ClipLine>): List<ClipVideoAnswer> {
++            val found = tube.await()
++            timings.lap("YouTube wait")
++            val videos = ClipYouTube.verify(found, lines)
++            if (found.isNotEmpty()) note("YouTube match", ClipYouTube.matchNote(videos, found.count { it.cues.isNotEmpty() }))
++            return videos
++        }
++
++        /** Opens by itself only on a first run (not after a typed name) and only for a strong match that no confident episode beats. */
++        private fun opens(clues: ClipClues, videos: List<ClipVideoAnswer>, answers: List<ClipAnswer>): Boolean =
++            clues.typed.isBlank() && videos.firstOrNull()?.let { it.candidate.confidence >= OPEN_MIN_CONFIDENCE } == true &&
++                answers.none { it.candidate.confident }
 +
 +        /** The clip cannot be heard (no video address, download or listening failed, no speech): the show named by the other clues can still be opened. */
 +        private suspend fun offerShows(clues: ClipClues, message: String, fileHint: Boolean = false) {
@@ -930,12 +969,19 @@ index 0000000..e5dc7ef
 +            }
 +        }
 +
-+        /** Starts one native call and waits for its end. Cancelling (or a time-out) stops the native work. */
-+        private suspend fun call(start: (ClipNativeListener) -> Unit): NativeResult =
++        /**
++         * Starts one native call and waits for its end. Cancelling (or a time-out) stops the native work.
++         * [onPart] is offered the lines (and screen text) heard so far when a later part of the listening starts, until it returns true.
++         */
++        private suspend fun call(
++            onPart: ((lines: List<ClipLine>, screenText: List<String>) -> Boolean)? = null,
++            start: (ClipNativeListener) -> Unit,
++        ): NativeResult =
 +            suspendCancellableCoroutine { continuation ->
 +                val lines = mutableListOf<ClipLine>()
 +                val screen = mutableListOf<String>()
 +                var ended = false
++                var partSent = false
 +                fun end(result: NativeResult) {
 +                    if (ended) return
 +                    ended = true
@@ -955,7 +1001,11 @@ index 0000000..e5dc7ef
 +                                timings.lap("sound")
 +                                change { it.copy(stage = ClipStage.Listening) }
 +                            }
-+                            "Listening" -> lastPart = value
++                            "Listening" -> {
++                                lastPart = value
++                                // The first part's lines are in once the next part starts; onPart says whether it used them.
++                                if (!partSent && onPart != null && lines.isNotEmpty()) partSent = onPart(lines.toList(), screen.toList())
++                            }
 +                        }
 +                        note(label, value)
 +                    }
@@ -2713,22 +2763,23 @@ index 0000000..9163232
 +    }
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetch.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetch.kt
 new file mode 100644
-index 0000000..e0a46d8
+index 0000000..9d9a16f
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetch.kt
 @@ -0,0 +1,53 @@
 +package com.nuvio.app.features.clipfinder
 +
-+import kotlinx.coroutines.async
-+import kotlinx.coroutines.awaitAll
 +import kotlinx.coroutines.coroutineScope
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.sync.Semaphore
++import kotlinx.coroutines.sync.withPermit
 +
 +/**
 + * Work done while the clip is still being listened to (listening is slow and needs no network). When
 + * the page alone names a show strongly (score 90 or more: an exact hashtag, a keyword of the page, this
 + * poster's last show), its episode list and the subtitles of its first 36 episodes (hinted episode and
-+ * season first) are fetched into the cache, 6 at a time. The search after listening then reads them
-+ * from the cache. The pipeline cancels this as soon as listening ends; what was fetched stays cached.
++ * season first) are fetched into the cache, with 6 fetches going at any time. The search after listening
++ * then reads them from the cache. The pipeline cancels this as soon as listening ends; what was fetched stays cached.
 + */
 +class ClipPrefetch(
 +    private val finder: ClipShowFinder,
@@ -2754,13 +2805,12 @@ index 0000000..e0a46d8
 +        episodes = loaded
 +        show = top.show
 +        val ordered = orderEpisodes(loaded, ClipNames.hint(clues, emptyList())).take(MAX_EPISODES)
-+        for (batch in ordered.chunked(IN_FLIGHT)) {
-+            val done = coroutineScope {
-+                batch.map { episode ->
-+                    async { episode.videoId.takeIf { subtitles.cues(top.show.metaId, episode) != null } }
-+                }.awaitAll()
++        // A sliding window: a slow file holds up only its own place, not the next 5.
++        coroutineScope {
++            val gate = Semaphore(IN_FLIGHT)
++            for (episode in ordered) {
++                launch { gate.withPermit { if (subtitles.cues(top.show.metaId, episode) != null) fetched += episode.videoId } }
 +            }
-+            fetched += done.filterNotNull()
 +        }
 +    }
 +
@@ -2798,13 +2848,14 @@ index 0000000..d870400
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
 new file mode 100644
-index 0000000..3eb399a
+index 0000000..7696884
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,210 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlinx.coroutines.async
++import kotlinx.coroutines.Deferred
 +import kotlinx.coroutines.awaitAll
 +import kotlinx.coroutines.coroutineScope
 +
@@ -2848,7 +2899,28 @@ index 0000000..3eb399a
 +        return suspects
 +    }
 +
-+    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, onNote: (String, String) -> Unit): List<ClipSuspect> {
++    /**
++     * Apple's model is asked beside the searches (it takes seconds) and its answer is read where it always was,
++     * in step 5b; when that step is not reached the question is dropped.
++     */
++    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, onNote: (String, String) -> Unit): List<ClipSuspect> =
++        coroutineScope {
++            val asked = clues.picked == null && clues.typed.isBlank() && lines.isNotEmpty()
++            val model = if (asked) async { clipQuietly { askModel(ClipModelGuess.prompt(clues, lines)) } ?: ClipModelAnswer(problem = "failed") } else null
++            try {
++                pickFrom(clues, lines, max, onNote, model)
++            } finally {
++                model?.cancel()
++            }
++        }
++
++    private suspend fun pickFrom(
++        clues: ClipClues,
++        lines: List<ClipLine>,
++        max: Int,
++        onNote: (String, String) -> Unit,
++        model: Deferred<ClipModelAnswer>?,
++    ): List<ClipSuspect> {
 +        // Mo tapped the show in the pick list: no clue can know better.
 +        clues.picked?.let { return listOf(ClipSuspect(it, PICKED_SCORE, "picked")) }
 +        val found = LinkedHashMap<String, ClipSuspect>()
@@ -2899,8 +2971,10 @@ index 0000000..3eb399a
 +
 +        // 3b. The site's own keywords for the clip, searched as they are; a result counts when it has that exact name.
 +        if (top() < 100) {
++            // Searched together, then read in the order of the keywords.
++            val read = searchTogether(clues.keywords.take(3))
 +            for (keyword in clues.keywords.take(3)) {
-+                val hit = safeSearch(keyword).firstOrNull { ClipNames.key(it.name) == ClipNames.key(keyword) } ?: continue
++                val hit = read(keyword).firstOrNull { ClipNames.key(it.name) == ClipNames.key(keyword) } ?: continue
 +                add(hit, 86, "keyword of the page")
 +            }
 +        }
@@ -2909,7 +2983,9 @@ index 0000000..3eb399a
 +        if (top() < 100) {
 +            val titles = clues.screenText.filter { ShowGuesser.hint(it).episode != null }
 +            val text = (listOf(clues.caption) + titles).joinToString("\n").trim()
-+            val results = ShowGuesser.scored(text) { query -> safeSearch(query) }
++            // Every query is searched together; each result is then read (and written down) in the order of the queries.
++            val read = searchTogether(ShowGuesser.queries(text))
++            val results = ShowGuesser.scored(text) { query -> read(query) }
 +            for ((show, score) in results) add(show, score, "search")
 +        }
 +
@@ -2932,7 +3008,7 @@ index 0000000..3eb399a
 +
 +        // 5b. Apple's on-device model reads what was heard and names up to 3 titles: weak clues, confirmed like all others.
 +        if (top() < 90 && lines.isNotEmpty()) {
-+            val answer = clipQuietly { askModel(ClipModelGuess.prompt(clues, lines)) } ?: ClipModelAnswer(problem = "failed")
++            val answer = model?.await() ?: ClipModelAnswer(problem = "failed")
 +            val named = ClipModelGuess.names(answer.text)
 +            onNote("Apple's model", answer.problem.ifBlank { named.joinToString().ifBlank { "named nothing" } })
 +            for (name in named) {
@@ -2952,9 +3028,30 @@ index 0000000..3eb399a
 +    private suspend fun safeSearch(query: String): List<ShowGuess> {
 +        val text = query.trim()
 +        if (text.length < 3) return emptyList()
-+        val results = answered[text] ?: clipQuietly { search(text) }?.also { if (it.isNotEmpty()) answered[text] = it }
++        return record(text, lookup(text))
++    }
++
++    /** The answer of one search: the remembered one, else asked. Null when it failed. Writes nothing down. */
++    private suspend fun lookup(text: String): List<ShowGuess>? =
++        answered[text] ?: clipQuietly { search(text) }?.also { if (it.isNotEmpty()) answered[text] = it }
++
++    private fun record(text: String, results: List<ShowGuess>?): List<ShowGuess> {
 +        searches += "\"$text\": " + (results?.size?.toString() ?: "failed")
 +        return results.orEmpty()
++    }
++
++    /**
++     * Asks for all [queries] at once. What comes back reads one query's answer and writes it down when it is read,
++     * so the notes and the results are those of searching one after another, in the order they are read.
++     */
++    private suspend fun searchTogether(queries: List<String>): suspend (String) -> List<ShowGuess> {
++        val texts = queries.map { it.trim() }.filter { it.length >= 3 }.distinct()
++        val answers = coroutineScope { texts.map { text -> async { lookup(text) } }.awaitAll() }
++        val byText = texts.zip(answers).toMap()
++        return { query ->
++            val text = query.trim()
++            if (text.length < 3) emptyList() else record(text, if (text in byText) byText[text] else lookup(text))
++        }
 +    }
 +
 +    companion object {
@@ -3028,10 +3125,10 @@ index 0000000..67e7526
 +    listOfNotNull(show.year, if (show.type == "movie") "Movie" else "Series").joinToString(" · ")
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
 new file mode 100644
-index 0000000..c68c40f
+index 0000000..9c4cdaa
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,131 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -3056,10 +3153,15 @@ index 0000000..c68c40f
 +    private val now: () -> Long,
 +    private val work: CoroutineContext,
 +) {
++    /**
++     * [warm]: ids of episodes whose subtitles are in the cache. Read first (they rank early), and filled while
++     * searching, so a search on the lines heard so far leaves its files for the one on all lines.
++     */
 +    suspend fun run(
 +        clues: ClipClues,
 +        lines: List<ClipLine>,
 +        prefetch: ClipPrefetch?,
++        warm: MutableSet<String>,
 +        timings: ClipTimings,
 +        note: (String, String) -> Unit,
 +        progress: (String) -> Unit,
@@ -3067,7 +3169,8 @@ index 0000000..c68c40f
 +        var suspects = finder.find(clues, lines, onNote = note)
 +        timings.lap("guess")
 +        val hint = ClipNames.hint(clues, lines)
-+        val cached: Set<String> = prefetch?.fetched.orEmpty()
++        // Episodes fetched beside listening (the page's show, or an earlier run on the first heard lines) are tried first.
++        val cached: Set<String> = prefetch?.fetched.orEmpty() + warm
 +        val episodeLists = mutableMapOf<String, List<ClipEpisode>>()
 +        val early = prefetch?.show
 +        if (prefetch != null && early != null) episodeLists[early.metaId] = prefetch.episodes
@@ -3113,9 +3216,9 @@ index 0000000..c68c40f
 +            for (episode in episodes) owners[episode.videoId] = guess to episode
 +            val showDeadline = minOf(deadline, now() + ClipFinderPipeline.SHOW_BUDGET_MS)
 +            val result = withContext(work) {
-+                subtitles.search(guess.metaId, episodes, lines, showDeadline, best) { done, total, found ->
++                subtitles.search(guess.metaId, episodes, lines, showDeadline, best, { done, total, found ->
 +                    progress("Searching ${guess.name}: $done of $total episodes, $found with subtitles")
-+                }
++                }, warm)
 +            }
 +            timings.lap("subtitles", "${result.tried} episodes")
 +            best = result.best
@@ -3641,10 +3744,10 @@ index 0000000..d07be0b
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinder.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinder.kt
 new file mode 100644
-index 0000000..5708a73
+index 0000000..31260af
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinder.kt
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,87 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlinx.coroutines.async
@@ -3655,7 +3758,7 @@ index 0000000..5708a73
 +data class ClipWebReply(val status: Int, val body: String)
 +
 +/**
-+ * Finds YouTube videos that may hold the clip and reads their captions: up to 3 searches with words
++ * Finds YouTube videos that may hold the clip and reads their captions: up to 3 searches (asked together) with words
 + * from the clues, then the first 6 videos (the best-ranked of each search in turn), 3 at a time.
 + * Whether a video really holds the clip is decided afterwards by [ClipYouTube.verify] with what was
 + * heard, so this can run while the clip is still being listened to. Every step is written to the
@@ -3674,8 +3777,11 @@ index 0000000..5708a73
 +        var key = ""
 +        val searches = mutableListOf<String>()
 +        val ranked = mutableListOf<List<String>>()
-+        for (query in queries) {
-+            val reply = clipQuietly(REQUEST_MS) { get(ClipYouTube.searchUrl(query), PAGE_HEADERS) }
++        // The searches go out together; their answers are read in the order of the queries.
++        val replies = coroutineScope {
++            queries.map { query -> async { clipQuietly(REQUEST_MS) { get(ClipYouTube.searchUrl(query), PAGE_HEADERS) } } }.awaitAll()
++        }
++        for ((query, reply) in queries.zip(replies)) {
 +            val ok = reply != null && reply.status in 200..299
 +            val ids = if (reply != null && ok) ClipYouTube.videoIds(reply.body) else emptyList()
 +            if (key.isEmpty() && reply != null && ok) key = ClipYouTube.apiKey(reply.body)
@@ -3731,18 +3837,19 @@ index 0000000..5708a73
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt
 new file mode 100644
-index 0000000..144de71
+index 0000000..2583a6f
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,189 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.PlayerSubtitleCueParser
 +import com.nuvio.app.features.player.SubtitleSyncCue
 +import com.nuvio.app.features.player.normalizeLanguageCode
-+import kotlinx.coroutines.async
-+import kotlinx.coroutines.awaitAll
++import kotlinx.coroutines.cancelChildren
++import kotlinx.coroutines.channels.Channel
 +import kotlinx.coroutines.coroutineScope
++import kotlinx.coroutines.launch
 +
 +/**
 + * One episode (or a movie: season and episode null). [videoId] is what the streams screen needs,
@@ -3812,11 +3919,12 @@ index 0000000..144de71
 +    )
 +
 +    /**
-+     * Goes through [episodes] in order, [inFlight] at a time, until all are tried, [deadlineMs]
-+     * (a [now] value) passes, or the best candidate is decisive. [keep] holds the best episodes of
-+     * shows searched before, so the candidates rank across shows. Matching only the best so far
-+     * plus the new batch gives the same top 3 as matching everything, because each episode is
-+     * scored on its own.
++     * Goes through [episodes] in order, keeping [inFlight] fetches going (a slow file holds up only itself),
++     * until all are tried, [deadlineMs] (a [now] value) passes, or the best candidate is decisive; the fetches
++     * still running are then cancelled. [keep] holds the best episodes of shows searched before, so the
++     * candidates rank across shows. Each file is matched as it lands: matching only the best so far plus the
++     * new file gives the same top 3 as matching everything, because each episode is scored on its own. [fetched]
++     * gets the id of every episode whose subtitles were found, for the ranking of a later search.
 +     */
 +    suspend fun search(
 +        showId: String,
@@ -3825,30 +3933,39 @@ index 0000000..144de71
 +        deadlineMs: Long,
 +        keep: List<EpisodeCues> = emptyList(),
 +        onProgress: (tried: Int, total: Int, withSubtitles: Int) -> Unit = { _, _, _ -> },
-+    ): SearchResult {
++        fetched: MutableSet<String>? = null,
++    ): SearchResult = coroutineScope {
 +        var best = keep
 +        var candidates = if (keep.isEmpty()) emptyList() else ClipMatcher.match(lines, keep)
 +        var tried = 0
 +        var withSubtitles = 0
-+        for (batch in episodes.chunked(inFlight)) {
-+            if (now() >= deadlineMs) break
-+            val loaded = coroutineScope {
-+                batch.map { episode -> async { episode to cues(showId, episode) } }.awaitAll()
++        val landed = Channel<Pair<ClipEpisode, List<SubtitleSyncCue>?>>(Channel.UNLIMITED)
++        var next = 0
++        var running = 0
++        while (true) {
++            while (running < inFlight && next < episodes.size && now() < deadlineMs) {
++                val episode = episodes[next++]
++                running++
++                launch { landed.send(episode to cues(showId, episode)) }
 +            }
-+            tried += batch.size
-+            val fresh = loaded.mapNotNull { (episode, cues) ->
-+                cues?.let { EpisodeCues(episode.videoId, episode.season, episode.episode, it) }
-+            }
-+            withSubtitles += fresh.size
-+            if (fresh.isNotEmpty()) {
-+                val pool = best + fresh
++            if (running == 0) break
++            val (landedEpisode, found) = landed.receive()
++            running--
++            tried++
++            if (found != null) {
++                withSubtitles++
++                fetched?.add(landedEpisode.videoId)
++                val pool = best + EpisodeCues(landedEpisode.videoId, landedEpisode.season, landedEpisode.episode, found)
 +                candidates = ClipMatcher.match(lines, pool)
 +                best = candidates.mapNotNull { candidate -> pool.firstOrNull { it.videoId == candidate.videoId } }
 +            }
 +            onProgress(tried, episodes.size, withSubtitles)
-+            if (isDecisive(candidates)) return SearchResult(best, candidates, tried, withSubtitles, decisive = true)
++            if (isDecisive(candidates)) {
++                this.coroutineContext.cancelChildren()
++                return@coroutineScope SearchResult(best, candidates, tried, withSubtitles, decisive = true)
++            }
 +        }
-+        return SearchResult(best, candidates, tried, withSubtitles, decisive = false)
++        SearchResult(best, candidates, tried, withSubtitles, decisive = false)
 +    }
 +
 +    /** Cues of one episode: from the cache, else the first English subtitle that parses (2 tried). Null when none. */
@@ -4903,10 +5020,10 @@ index 0000000..3693661
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt
 new file mode 100644
-index 0000000..0329c0a
+index 0000000..0188abc
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,301 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.EmptyCoroutineContext
@@ -4914,6 +5031,7 @@ index 0000000..0329c0a
 +import kotlin.test.assertEquals
 +import kotlin.test.assertFalse
 +import kotlin.test.assertTrue
++import kotlinx.coroutines.CompletableDeferred
 +import kotlinx.coroutines.ExperimentalCoroutinesApi
 +import kotlinx.coroutines.launch
 +import kotlinx.coroutines.test.runCurrent
@@ -4960,8 +5078,16 @@ index 0000000..0329c0a
 +        )
 +    }.toString()
 +
-+    /** The phone: reads pages from [pages] (by address), and listens at once, or only on [release] when [hold]. */
-+    private class Phone(val pages: Map<String, String>, val lines: List<ClipLine>, val hold: Boolean = false) : ClipFinderNative {
++    /**
++     * The phone: reads pages from [pages] (by address), and listens at once, or only on [release] when [hold].
++     * [firstPart] is heard first, then the next part starts (the "Listening" note), then [lines] come at the end.
++     */
++    private class Phone(
++        val pages: Map<String, String>,
++        val lines: List<ClipLine>,
++        val hold: Boolean = false,
++        val firstPart: List<ClipLine> = emptyList(),
++    ) : ClipFinderNative {
 +        var readLinks = 0
 +        var listenCalls = 0
 +        var listenMedia: List<String>? = null
@@ -4977,6 +5103,10 @@ index 0000000..0329c0a
 +            listenCalls++
 +            listenMedia = mediaUrls
 +            listener.onNote("Audio", "41 s")
++            if (firstPart.isNotEmpty()) {
++                firstPart.forEach { listener.onLine(it.text, it.startMs, it.endMs) }
++                listener.onNote("Listening", "part 2 of 2")
++            }
 +            if (hold) waiting = listener else finish(listener)
 +        }
 +
@@ -5006,6 +5136,8 @@ index 0000000..0329c0a
 +        val webGet: suspend (String, Map<String, String>) -> ClipWebReply = { _, _ -> ClipWebReply(404, "") },
 +        val search: suspend (String) -> List<ShowGuess> = { query -> if (query == "Made Up Show") listOf(show) else emptyList() },
 +        val popular: suspend () -> List<ShowGuess> = { emptyList() },
++        val ask: suspend (String) -> ClipModelAnswer = { ClipModelAnswer(problem = "not asked") },
++        val youtube: ClipYouTubeFinder? = null,
 +    ) {
 +        val addon = FakeSubtitleAddon(texts)
 +        val states = mutableListOf<ClipFinderState>()
@@ -5014,8 +5146,8 @@ index 0000000..0329c0a
 +        private val memory = ClipMemory({ null }, { }, { 1_000L })
 +        private val subtitles = EpisodeSubtitleSource({ _, id -> addon.list(id) }, { url -> addon.download(url) }, MapSubtitleCache(), { 0L })
 +        private val pipeline = ClipFinderPipeline(
-+            phone, ClipShowFinder(search, popular, memory), { loads++; episodes }, subtitles, memory, { 0L }, EmptyCoroutineContext,
-+            youtube = tube.finder(), webGet = webGet,
++            phone, ClipShowFinder(search, popular, memory, ask), { loads++; episodes }, subtitles, memory, { 0L }, EmptyCoroutineContext,
++            youtube = youtube ?: tube.finder(), webGet = webGet,
 +        )
 +
 +        suspend fun run(source: String = link) = pipeline.run(source) { states += it }
@@ -5128,6 +5260,69 @@ index 0000000..0329c0a
 +        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
 +        assertEquals("Made Up Show: 12 subtitle files", h.note("Fetched while listening"))
 +        assertTrue("prefetch 0.0 s (12 files) beside" in h.note("Timings"))
++    }
++
++    @Test
++    fun `once the first part is heard the show is searched beside listening, and the answer is the one from all lines`() = runTest {
++        val page = mapOf(link to pageJson("lol"))
++        val model: suspend (String) -> ClipModelAnswer = { ClipModelAnswer(text = "Made Up Show") }
++        val phone = Phone(page, clipLines.drop(6), hold = true, firstPart = clipLines.take(6))
++        val h = Harness(phone, search = { query -> if (query == "Made Up Show") listOf(show) else emptyList() }, ask = model)
++        val job = launch { h.run() }
++        runCurrent()
++        assertEquals(1, phone.listenCalls)
++        assertEquals(12, h.addon.downloaded.size, "the subtitle files are fetched before listening ends")
++        assertTrue(h.states.none { it.stage == ClipStage.Searching }, "the screen still shows listening")
++        phone.release()
++        job.join()
++        assertEquals(12, h.addon.downloaded.size, "nothing is downloaded twice")
++        assertEquals(ClipStage.Done, h.last.stage)
++        assertEquals(clipLines, h.last.lines)
++        assertTrue("search while listening" in h.note("Timings") && "beside" in h.note("Timings"))
++
++        val whole = Harness(Phone(page, clipLines), search = { query -> if (query == "Made Up Show") listOf(show) else emptyList() }, ask = model)
++        whole.run()
++        assertTrue(whole.last.answers.isNotEmpty())
++        assertEquals(whole.last.answers.map { it.candidate }, h.last.answers.map { it.candidate })
++        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
++        assertTrue("search while listening" !in whole.note("Timings"))
++    }
++
++    @Test
++    fun `a first part with too few words starts nothing`() = runTest {
++        val phone = Phone(mapOf(link to pageJson("lol")), clipLines.drop(1), hold = true, firstPart = listOf(ClipLine("bako ritu", 0, 1_000)))
++        val h = Harness(phone, search = { query -> if (query == "Made Up Show") listOf(show) else emptyList() }, ask = { ClipModelAnswer(text = "Made Up Show") })
++        val job = launch { h.run() }
++        runCurrent()
++        assertEquals(0, h.addon.downloaded.size)
++        phone.release()
++        job.join()
++        assertEquals(ClipStage.Done, h.last.stage)
++        assertTrue("search while listening" !in h.note("Timings"))
++    }
++
++    @Test
++    fun `the episode answer is shown before YouTube is done, and the YouTube card is added after`() = runTest {
++        val phone = Phone(mapOf(link to pageJson("Made Up Show S2E5 the lamp scene")), clipLines)
++        val inner = tubeWith(texts.getValue("tt001:2:5"))
++        val gate = CompletableDeferred<Unit>()
++        val slowTube = ClipYouTubeFinder({ url, sent -> gate.await(); inner.get(url, sent) }, { url, body, sent -> inner.post(url, body, sent) })
++        val h = Harness(phone, youtube = slowTube)
++        val job = launch { h.run() }
++        runCurrent()
++        assertEquals(ClipStage.Done, h.last.stage)
++        assertFalse(h.last.failed)
++        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
++        assertTrue(h.last.youtube.isEmpty(), "YouTube has not answered yet")
++        assertTrue(job.isActive, "the run waits for YouTube in the background")
++        gate.complete(Unit)
++        job.join()
++        assertEquals(ClipStage.Done, h.last.stage)
++        assertEquals("tt001:2:5", h.last.answers.first().candidate.videoId)
++        assertEquals(listOf("FULLvideo01"), h.last.youtube.map { it.video.id })
++        assertFalse(h.last.openYouTube)
++        assertTrue(h.note("YouTube match").startsWith("Made Up Interview: "))
++        assertTrue("YouTube wait" in h.note("Timings"))
 +    }
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderScreenTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderScreenTest.kt
@@ -6340,6 +6535,50 @@ index 0000000..c45f971
 +        assertNull(ClipPlayTargets.forPlayer(null, "tt001", 2, 5, start))
 +    }
 +}
+diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetchTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetchTest.kt
+new file mode 100644
+index 0000000..651c4a9
+--- /dev/null
++++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipPrefetchTest.kt
+@@ -0,0 +1,38 @@
++package com.nuvio.app.features.clipfinder
++
++import kotlin.test.Test
++import kotlin.test.assertEquals
++import kotlin.test.assertTrue
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.test.advanceTimeBy
++import kotlinx.coroutines.test.advanceUntilIdle
++import kotlinx.coroutines.test.runCurrent
++import kotlinx.coroutines.test.runTest
++
++/** Everything here is made up: names, ids and subtitle words. */
++@OptIn(ExperimentalCoroutinesApi::class)
++class ClipPrefetchTest {
++    private val show = ShowGuess("tt001", "series", "Made Up Show")
++    private val episodes = (1..12).map { ClipEpisode("tt001:1:$it", "tt001:1:$it", "series", 1, it, "Title $it") }
++    private val texts = episodes.associate { it.videoId to ClipTestText.cueTexts(700 + it.episode!!) }
++
++    @Test
++    fun `a slow file holds up only itself while the episode list is fetched`() = runTest {
++        val addon = FakeSubtitleAddon(texts)
++        addon.listDelayMs = 50
++        addon.listDelays = mapOf("tt001:1:1" to 10_000L)
++        val subtitles = EpisodeSubtitleSource({ _, id -> addon.list(id) }, { url -> addon.download(url) }, MapSubtitleCache(), { 0L })
++        val finder = ClipShowFinder({ emptyList() }, { listOf(show) }, ClipMemory({ null }, { }, { 1_000L }))
++        val prefetch = ClipPrefetch(finder, { episodes }, subtitles)
++        val job = launch { prefetch.run(ClipClues(caption = "lol #madeupshow")) }
++        advanceTimeBy(200)
++        runCurrent()
++        assertEquals(11, prefetch.fetched.size, "11 files are in while the first one is still on its way")
++        assertTrue("tt001:1:1" !in prefetch.fetched)
++        advanceUntilIdle()
++        job.join()
++        assertEquals(12, prefetch.fetched.size)
++        assertEquals(6, addon.peak)
++    }
++}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipQuietlyTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipQuietlyTest.kt
 new file mode 100644
 index 0000000..1408040
@@ -6378,10 +6617,10 @@ index 0000000..1408040
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
 new file mode 100644
-index 0000000..1b6b16e
+index 0000000..509b483
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,285 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.cancellation.CancellationException
@@ -6389,9 +6628,12 @@ index 0000000..1b6b16e
 +import kotlin.test.assertEquals
 +import kotlin.test.assertFailsWith
 +import kotlin.test.assertTrue
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.delay
 +import kotlinx.coroutines.test.runTest
 +
 +/** Names, ids and handles here are made up, except one real caption and the show title it names. */
++@OptIn(ExperimentalCoroutinesApi::class)
 +class ClipShowFinderTest {
 +    private val phoneCaption = "The best part of Modern family.❤️❤️#edit #movieedit #modernfamily #fyp #viral"
 +    private val family = ShowGuess("tt100", "series", "Modern Family")
@@ -6577,6 +6819,91 @@ index 0000000..1b6b16e
 +        assertTrue("\"Made Up Show\": failed" in notes.getValue("Searches"))
 +        val cancelled = ClipShowFinder({ throw CancellationException("stopped") }, { emptyList() }, memory)
 +        assertFailsWith<CancellationException> { cancelled.find(ClipClues(caption = "Made Up Show S2E5"), emptyList()) }
++    }
++
++    @Test
++    fun `keyword searches go out together and read in the order of the keywords`() = runTest {
++        var active = 0
++        var peak = 0
++        val shows = mapOf("Made Up Show" to showA, "Invented Drama" to showB, "Other Thing" to other)
++        val subject = ClipShowFinder(
++            { query ->
++                active++
++                peak = maxOf(peak, active)
++                delay(100)
++                active--
++                listOfNotNull(shows[query])
++            },
++            { emptyList() },
++            memory,
++            { ClipModelAnswer(problem = "not asked") },
++        )
++        val clues = ClipClues(keywords = listOf("Made Up Show", "Invented Drama", "Other Thing"))
++        assertEquals(listOf("Made Up Show", "Invented Drama", "Other Thing"), subject.names(clues))
++        assertEquals(3, peak)
++        assertEquals(100L, currentTime, "three searches took the time of one")
++        assertEquals("\"Made Up Show\": 1, \"Invented Drama\": 1, \"Other Thing\": 1", notes["Searches"])
++    }
++
++    @Test
++    fun `caption queries searched together give the shows and notes of searching one after another`() = runTest {
++        val caption = "Made Up Show S2E5 the lamp scene #madeupshow #inventeddrama"
++        suspend fun run(waitMs: Long): Triple<List<ClipSuspect>, String?, Long> {
++            val seen = mutableMapOf<String, String>()
++            val subject = ClipShowFinder(
++                { query ->
++                    delay(waitMs)
++                    when (query.lowercase()) {
++                        "made up show" -> listOf(showA, other)
++                        "invented drama" -> listOf(showB)
++                        else -> emptyList()
++                    }
++                },
++                { emptyList() },
++                ClipMemory({ null }, { }, { 1_000L }),
++                { ClipModelAnswer(problem = "not asked") },
++            )
++            val before = currentTime
++            val found = subject.find(ClipClues(caption = caption)) { label, value -> seen[label] = value }
++            return Triple(found, seen["Searches"], currentTime - before)
++        }
++        val quick = run(0)
++        val slow = run(100)
++        assertTrue(quick.first.isNotEmpty())
++        assertEquals(quick.first, slow.first)
++        assertEquals(quick.second, slow.second)
++        assertTrue(slow.third <= 200, "the queries did not wait for each other: ${slow.third} ms")
++    }
++
++    @Test
++    fun `Apple's model is asked beside the searches and read where it always was`() = runTest {
++        val events = mutableListOf<String>()
++        val subject = ClipShowFinder(
++            { query ->
++                events += "search $query"
++                delay(100)
++                if (query == "Made Up Show") listOf(showA) else emptyList()
++            },
++            { emptyList() },
++            memory,
++            {
++                events += "model start"
++                delay(100)
++                ClipModelAnswer(text = "Made Up Show")
++            },
++        )
++        val found = subject.find(ClipClues(caption = "something"), listOf(ClipLine("bako ritu nesa dako", 0, 3_000)))
++        assertEquals("Apple's model", found.single().why)
++        assertEquals(setOf("search something", "model start"), events.take(2).toSet(), "both were started before either answered")
++        assertTrue(currentTime < 300, "the model and the first search overlapped: $currentTime ms")
++    }
++
++    @Test
++    fun `a clear clue means the model's answer is not waited for`() = runTest {
++        val subject = ClipShowFinder({ emptyList() }, { listOf(showA) }, memory, { delay(60_000); ClipModelAnswer(text = "Other Thing") })
++        val found = subject.find(ClipClues(caption = "#madeupshow"), listOf(ClipLine("bako ritu nesa dako", 0, 3_000)))
++        assertEquals(listOf("Made Up Show"), found.map { it.show.name })
++        assertEquals(0L, currentTime)
 +    }
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowPickerTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowPickerTest.kt
@@ -6809,15 +7136,17 @@ index 0000000..f08bdfa
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt
 new file mode 100644
-index 0000000..ebafe34
+index 0000000..6bd2f07
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,139 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.test.Test
 +import kotlin.test.assertEquals
 +import kotlin.test.assertTrue
++import kotlinx.coroutines.ExperimentalCoroutinesApi
++import kotlinx.coroutines.delay
 +import kotlinx.coroutines.test.runTest
 +
 +/**
@@ -6858,6 +7187,7 @@ index 0000000..ebafe34
 +}
 +
 +/** Everything here is made up: ids, titles, captions and words. */
++@OptIn(ExperimentalCoroutinesApi::class)
 +class ClipYouTubeFinderTest {
 +    private val clues = ClipClues(caption = "Made up interview with a sample guest")
 +
@@ -6916,6 +7246,37 @@ index 0000000..ebafe34
 +        val refusedNotes = mutableListOf<Pair<String, String>>()
 +        assertEquals(emptyList(), refused.finder().collect(clues) { label, value -> refusedNotes += label to value })
 +        assertEquals(listOf("YouTube searches" to "\"Made up interview with a sample guest\": HTTP 429"), refusedNotes)
++    }
++
++    @Test
++    fun `the searches go out together and are read in the order of the queries`() = runTest {
++        val tube = FakeTube(searchIds = listOf("AAAAAAAAAA1"))
++        val many = ClipClues(
++            keywords = listOf("made up interview"),
++            caption = "sample guest talks about lamps",
++            screenText = listOf("Another Title Here"),
++        )
++        val queries = ClipYouTube.queries(many)
++        assertEquals(3, queries.size)
++        var active = 0
++        var peak = 0
++        val finder = ClipYouTubeFinder(
++            { url, sent ->
++                if (url.startsWith("https://www.youtube.com/results")) {
++                    active++
++                    peak = maxOf(peak, active)
++                    delay(100)
++                    active--
++                }
++                tube.get(url, sent)
++            },
++            { url, body, sent -> tube.post(url, body, sent) },
++        )
++        val notes = mutableListOf<Pair<String, String>>()
++        finder.collect(many) { label, value -> notes += label to value }
++        assertEquals(3, peak)
++        assertEquals(100L, currentTime, "three searches took the time of one")
++        assertEquals(queries.joinToString { "\"$it\": 1" }, notes.first { it.first == "YouTube searches" }.second)
 +    }
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeTest.kt
@@ -7106,10 +7467,10 @@ index 0000000..02af886
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt
 new file mode 100644
-index 0000000..393595a
+index 0000000..201be4e
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,243 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleSyncCue
@@ -7120,6 +7481,7 @@ index 0000000..393595a
 +import kotlin.test.assertFalse
 +import kotlin.test.assertNull
 +import kotlin.test.assertTrue
++import kotlinx.coroutines.ExperimentalCoroutinesApi
 +import kotlinx.coroutines.delay
 +import kotlinx.coroutines.test.runTest
 +
@@ -7162,6 +7524,8 @@ index 0000000..393595a
 +    var clock = 0L
 +    var downloadCostMs = 0L
 +    var listDelayMs = 0L
++    /** Listing time of single episodes (by subtitle id), instead of [listDelayMs]. */
++    var listDelays = emptyMap<String, Long>()
 +    var active = 0
 +    var peak = 0
 +    var failing = emptySet<String>()
@@ -7171,7 +7535,8 @@ index 0000000..393595a
 +        listCalls++
 +        active++
 +        peak = max(peak, active)
-+        if (listDelayMs > 0) delay(listDelayMs)
++        val wait = listDelays[id] ?: listDelayMs
++        if (wait > 0) delay(wait)
 +        active--
 +        return links(id)
 +    }
@@ -7192,6 +7557,7 @@ index 0000000..393595a
 +    }
 +}
 +
++@OptIn(ExperimentalCoroutinesApi::class)
 +class EpisodeSubtitleSourceTest {
 +    private fun episode(id: String, season: Int? = 1, number: Int? = 1) =
 +        ClipEpisode(videoId = id, subtitleId = id, type = "series", season = season, episode = number)
@@ -7271,15 +7637,45 @@ index 0000000..393595a
 +    }
 +
 +    @Test
-+    fun `the search stops after the batch that holds a clear match`() = runTest {
++    fun `the search stops at the file that holds a clear match`() = runTest {
 +        val list = episodes(30)
 +        val addon = addonFor(list, 200)
 +        val lines = ClipTestText.linesFrom(ClipTestText.cueTexts(203), 10..21)
 +        val result = source(addon).search("show", list, lines, deadlineMs = Long.MAX_VALUE)
 +        assertTrue(result.decisive)
-+        assertEquals(6, result.tried)
++        assertEquals(3, result.tried, "e1 to e3 landed, nothing after the match is waited for")
 +        assertEquals("e3", result.candidates.first().videoId)
 +        assertTrue(addon.downloaded.size <= 6)
++    }
++
++    @Test
++    fun `a slow file does not hold up the others`() = runTest {
++        val list = episodes(10)
++        val addon = addonFor(list, 600)
++        addon.listDelays = mapOf("e1" to 10_000L)
++        val tried = mutableListOf<Pair<Int, Long>>()
++        val result = source(addon).search("show", list, ClipTestText.unrelatedLines(), deadlineMs = Long.MAX_VALUE, onProgress = { done, _, _ ->
++            tried += done to currentTime
++        })
++        assertEquals(10, result.tried)
++        assertEquals(0L, tried.first { it.first == 9 }.second, "nine files are in while the slow one is still on its way")
++        assertEquals(10_000L, tried.last().second)
++    }
++
++    @Test
++    fun `after a clear match the files still on their way are cancelled and no more are started`() = runTest {
++        val list = episodes(30)
++        val addon = addonFor(list, 200)
++        addon.listDelays = mapOf("e4" to 5_000L, "e5" to 5_000L, "e6" to 5_000L)
++        val lines = ClipTestText.linesFrom(ClipTestText.cueTexts(203), 10..21)
++        val fetched = mutableSetOf<String>()
++        val result = source(addon).search("show", list, lines, deadlineMs = Long.MAX_VALUE, fetched = fetched)
++        assertTrue(result.decisive)
++        assertEquals("e3", result.candidates.first().videoId)
++        assertEquals(setOf("e1", "e2", "e3"), fetched)
++        assertEquals(3, addon.downloaded.size, "the three slow files were cancelled before their download")
++        assertTrue(addon.listCalls <= 8, "no new fetch after the match: ${addon.listCalls}")
++        assertTrue(currentTime < 5_000L, "the search did not wait for the slow files")
 +    }
 +
 +    @Test
