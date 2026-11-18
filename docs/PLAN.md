@@ -9861,6 +9861,12 @@ ASSUMPTIONS (cannot be checked from here)
 - D6 The prefetch's extra requests during listening do not slow the clip's own download noticeably (listening
   starts after the download).
 
+- [ ] **7f. Speed-ups (PR #6, 2026-11-18)** Fable ideas, Sonnet built, Opus reviewed. Search while listening
+  (warms caches), sliding window of 6 subtitle files, parallel show guesses, answer shown before YouTube, stop listening
+  early on a decisive match whose start is in the first 8 s, disk-cached subtitles matched first, episode lists cached
+  1 day and "no English file" 7 days, top shows interleaved, Instagram embed beside the page read, iOS 26
+  SpeechAnalyzer with the old engine as fallback. Tick after Mo's phone check (Timings line, Modern Family still found).
+
 - [ ] **8. Arabic** (after v1 ships; Mo wants it). Speech locale picked from the show's
   language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
   (diacritics, letter forms). Test clip: Love Is Blind: Habibi (on Mo's Mac).

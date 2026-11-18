@@ -778,10 +778,10 @@ index 0000000..fe1e422
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 new file mode 100644
-index 0000000..a196b7b
+index 0000000..3673c16
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
-@@ -0,0 +1,440 @@
+@@ -0,0 +1,443 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -875,8 +875,8 @@ index 0000000..a196b7b
 +        private var audioMs: Long? = null
 +        /** Ends listening with the lines heard so far (set while a listen runs). */
 +        private var stopListening: (() -> Unit)? = null
-+        /** The episode the early search found and where in the clip its start was heard; set when listening was stopped. */
-+        private var earlyStop: Pair<String, Long>? = null
++        /** The match the early search found (its end not yet known) and where in the clip its start was heard. */
++        private var earlyStop: Pair<ClipCandidate, Long>? = null
 +        private var stoppedEarly = false
 +
 +        fun change(block: (ClipFinderState) -> ClipFinderState) {
@@ -982,7 +982,7 @@ index 0000000..a196b7b
 +                                    val offset = found.stopOffsetMs
 +                                    val top = found.answers.firstOrNull()?.candidate
 +                                    if (offset != null && top != null) {
-+                                        earlyStop = top.videoId to offset
++                                        earlyStop = top to offset
 +                                        stopListening?.invoke()
 +                                    }
 +                                }
@@ -1056,12 +1056,15 @@ index 0000000..a196b7b
 +            }
 +        }
 +
-+        /** After listening stopped early the lines end before the clip does: its end is where it started plus the sound's length. */
++        /**
++         * After listening stopped early the lines end before the clip does: its end is where it started plus the sound's
++         * length. Only for the same episode and start as the early match, since [offset] was measured from that start.
++         */
 +        private fun withClipEnd(answers: List<ClipAnswer>): List<ClipAnswer> {
-+            val (videoId, offset) = earlyStop?.takeIf { stoppedEarly } ?: return answers
++            val (early, offset) = earlyStop?.takeIf { stoppedEarly } ?: return answers
 +            val total = audioMs ?: return answers
 +            return answers.map { answer ->
-+                if (answer.candidate.videoId != videoId) answer
++                if (answer.candidate.videoId != early.videoId || answer.candidate.startMs != early.startMs) answer
 +                else answer.copy(candidate = answer.candidate.copy(endMs = ClipEarlyStop.endMs(answer.candidate, offset, total)))
 +            }
 +        }
@@ -10032,10 +10035,10 @@ index 0000000..aa62f6f
 +}
 diff --git a/iosApp/iosApp/ClipFinder/ClipTranscriber.swift b/iosApp/iosApp/ClipFinder/ClipTranscriber.swift
 new file mode 100644
-index 0000000..1344c01
+index 0000000..7add75c
 --- /dev/null
 +++ b/iosApp/iosApp/ClipFinder/ClipTranscriber.swift
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,358 @@
 +import AVFoundation
 +import Foundation
 +import Speech
@@ -10310,7 +10313,7 @@ index 0000000..1344c01
 +            }
 +            let analyzer = SpeechAnalyzer(modules: [transcriber])
 +            let audioFile = try AVAudioFile(forReading: file)
-+            let collector = Task { () -> [Word] in
++            let collector = Task { () async throws -> [Word] in
 +                var words: [Word] = []
 +                for try await result in transcriber.results {
 +                    for run in result.text.runs {
@@ -10327,17 +10330,24 @@ index 0000000..1344c01
 +                }
 +                return words
 +            }
-+            return try await withTaskCancellationHandler {
-+                if let last = try await analyzer.analyzeSequence(from: audioFile) {
-+                    try await analyzer.finalizeAndFinish(through: last)
-+                } else {
++            let words: [Word] = try await withTaskCancellationHandler {
++                do {
++                    if let last = try await analyzer.analyzeSequence(from: audioFile) {
++                        try await analyzer.finalizeAndFinish(through: last)
++                    } else {
++                        await analyzer.cancelAndFinishNow()
++                    }
++                } catch {
++                    collector.cancel()
 +                    await analyzer.cancelAndFinishNow()
++                    throw error
 +                }
 +                return try await collector.value
 +            } onCancel: {
 +                collector.cancel()
 +                Task { await analyzer.cancelAndFinishNow() }
 +            }
++            return words
 +        } catch {
 +            return nil
 +        }
