@@ -12,3 +12,4 @@
 - 2026-11-17: a mass helper rename by a subagent deleted closing braces in 3 files; push to the PR early so Fork check compiles it, before reviewing logic.
 - 2026-11-18: subagent tests used `currentTime` without `import kotlinx.coroutines.test.currentTime` and a call missed a required argument; tell builders to check every import and signature, and push early so Fork check compiles.
 - 2026-11-18: with a per-file stop rule, a test that two tied files rank in list order must keep each file below the decisive bar, or the first to land stops the search.
+- 2026-11-18: hits of one cue must stay in word order (a groupBy then stable sort reordered them), and any rule that links distant hits needs its own guard against short stray lines at the ends; the review found both.

@@ -78,6 +78,11 @@ Kotlin Multiplatform + Compose (shared app code), Swift (iOS shell and extension
 - 2026-11-15 | Start/end: a cluster is substantial with 4+ distinct hits from 3+ cues; span = earliest
   to latest substantial cluster, hits = total over them (none substantial: biggest cluster) |
   a share-of-hits cut dropped real compilation segments; a lone stray phrase stays ignored.
+- 2026-11-18 | Cut-up clips: the longest run of hits in clip order (each within 3 min of the previous,
+  each hit backed by its own 4+ word line or a hit within 45 s; end pieces need 5+ words or a
+  neighbour) also counts as a scene when it has 4+ hits from 3+ cues; resting on the chain alone,
+  confident needs 40% of the clip's triples | pieces of a clip with the middle cut out were too
+  small or too far apart to count; the extra bars keep stray short lines from moving the start.
 - 2026-11-15 | Share extension opens the app through the responder chain, notification as fallback |
   extensions cannot name UIApplication.open; the notification tap reuses the app's existing "deeplink" handler.
 - 2026-11-15 | Shared video = file:// link parsed in Kotlin, opened in place | no copy of the video is stored.

@@ -1881,10 +1881,10 @@ index 0000000..4ae71e2
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
 new file mode 100644
-index 0000000..2039549
+index 0000000..45ac516
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipMatcher.kt
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,190 @@
 +package com.nuvio.app.features.clipfinder
 +
 +object ClipMatcher {
@@ -1900,9 +1900,15 @@ index 0000000..2039549
 +
 +    /** A cluster is substantial (a real scene of the clip) with this many hits from this many cues. */
 +    private const val MIN_CUES = 3
++    /** Hits in clip order may skip up to this much of the episode between them (a cut-up clip). */
++    private const val CHAIN_SKIP_MS = 180_000L
++    /** A piece at either end of a chain needs this many hits from its own line (5+ words heard). */
++    private const val END_PIECE_HITS = 3
++    /** A match resting only on a chain must explain this share of the clip: a cut clip is all pieces. */
++    private const val CHAIN_ONLY_SHARE = 0.4
 +
 +    private class Occurrence(val key: String, val startMs: Long, val endMs: Long, val cue: Int)
-+    private class Scored(val candidate: ClipCandidate, val mainHits: Int)
++    private class Scored(val candidate: ClipCandidate, val mainHits: Int, val chainOnly: Boolean)
 +
 +    /**
 +     * Scores each episode by its distinct word triples shared with the clip. A hit counts only
@@ -1914,6 +1920,14 @@ index 0000000..2039549
 +     * With no substantial cluster the biggest one is used. Best-first; only the best can be
 +     * [ClipCandidate.confident]: at least 4 hits in its biggest cluster, hits of at least 15% of
 +     * the clip's distinct triples, and at least twice the runner-up's hits.
++     *
++     * Cut-up clips (pieces removed in the middle) leave pieces too small or too far apart for
++     * the rules above. So the longest run of hits that comes in the same order as in the clip,
++     * each within 3 min of the previous one, also counts as a scene when it has 4+ distinct
++     * hits from 3+ cues. A chain hit needs another hit from its own cue (a line of 4+ words) or
++     * from a different cue within 45 s, and the pieces at either end need 3+ hits of their own or
++     * a neighbour, so a short stray line cannot move the start. A match with no ordinary scene,
++     * resting on the chain alone, must also cover 40% of the clip to be confident.
 +     */
 +    fun match(
 +        lines: List<ClipLine>,
@@ -1921,23 +1935,26 @@ index 0000000..2039549
 +        maxResults: Int = 3,
 +        fillers: Set<String> = emptySet(),
 +    ): List<ClipCandidate> {
-+        val clipTriples = ClipText.triples(lines.flatMap { ClipText.normalize(it.text, fillers) }).toSet()
-+        if (clipTriples.isEmpty()) return emptyList()
++        val clipOrder = HashMap<String, Int>()
++        ClipText.triples(lines.flatMap { ClipText.normalize(it.text, fillers) })
++            .forEachIndexed { i, key -> clipOrder.getOrPut(key) { i } }
++        if (clipOrder.isEmpty()) return emptyList()
 +
-+        val scored = episodes.mapNotNull { score(it, clipTriples, fillers) }
++        val scored = episodes.mapNotNull { score(it, clipOrder, fillers) }
 +            .sortedByDescending { it.candidate.hits }
 +            .take(maxResults)
 +        return scored.mapIndexed { index, s ->
 +            val c = s.candidate
 +            val other = scored.filterIndexed { i, _ -> i != index }.maxOfOrNull { it.candidate.hits } ?: 0
-+            val share = c.hits.toDouble() / clipTriples.size
++            val share = c.hits.toDouble() / clipOrder.size
 +            val raw = minOf(1.0, c.hits / 12.0) * c.hits / (c.hits + other) * minOf(1.0, share / 0.5)
-+            val clear = index == 0 && s.mainHits >= MIN_HITS && c.hits >= 2 * other && share >= MIN_SHARE
++            val minShare = if (s.chainOnly) CHAIN_ONLY_SHARE else MIN_SHARE
++            val clear = index == 0 && s.mainHits >= MIN_HITS && c.hits >= 2 * other && share >= minShare
 +            c.copy(confident = clear, confidence = if (c.hits < MIN_HITS) minOf(raw, 0.3) else raw)
 +        }
 +    }
 +
-+    private fun score(ep: EpisodeCues, clipTriples: Set<String>, fillers: Set<String>): Scored? {
++    private fun score(ep: EpisodeCues, clipOrder: Map<String, Int>, fillers: Set<String>): Scored? {
 +        class W(val word: String, val start: Long, val end: Long, val cue: Int)
 +        val words = ep.cues.sortedBy { it.startTimeMs }.flatMapIndexed { cueIndex, cue ->
 +            ClipText.normalize(cue.text, fillers).map { W(it, cue.startTimeMs, cue.endTimeMs, cueIndex) }
@@ -1945,18 +1962,25 @@ index 0000000..2039549
 +        val found = mutableListOf<Occurrence>()
 +        for (i in 0..words.size - 3) {
 +            val key = "${words[i].word} ${words[i + 1].word} ${words[i + 2].word}"
-+            if (key in clipTriples) found += Occurrence(key, words[i].start, words[i + 2].end, words[i].cue)
++            if (key in clipOrder) found += Occurrence(key, words[i].start, words[i + 2].end, words[i].cue)
 +        }
-+        val usable = found.groupBy { it.key }.filterValues { it.size <= MAX_OCCURRENCES }.values.flatten()
-+            .sortedBy { it.startMs }
-+        val kept = usable.filterIndexed { i, o -> hasNeighbour(usable, i, o) }
-+        if (kept.isEmpty()) return null
++        // Kept in word order (time-sorted), so hits of one cue stay in the order they are said.
++        val occurrences = found.groupingBy { it.key }.eachCount()
++        val usable = found.filter { occurrences.getValue(it.key) <= MAX_OCCURRENCES }
++        val neighboured = usable.indices.map { hasNeighbour(usable, it, usable[it]) }
++        val kept = usable.filterIndexed { i, _ -> neighboured[i] }
++        val keysPerCue = usable.groupBy { it.cue }.mapValues { (_, os) -> os.map { it.key }.toSet().size }
++        fun hits(c: List<Occurrence>) = c.map { it.key }.toSet().size
++        fun isScene(c: List<Occurrence>) = hits(c) >= MIN_HITS && c.map { it.cue }.toSet().size >= MIN_CUES
++        val linked = usable.filterIndexed { i, o -> neighboured[i] || keysPerCue.getValue(o.cue) >= 2 }
++        val chain = trimWeakEnds(orderedChain(linked, clipOrder)).takeIf { isScene(it) }
++        if (kept.isEmpty() && chain == null) return null
 +
 +        val clusters = groupByTime(kept)
-+        fun hits(c: List<Occurrence>) = c.map { it.key }.toSet().size
-+        val main = clusters.maxByOrNull { hits(it) }!! // first (earliest) on a tie
-+        val substantial = clusters.filter { hits(it) >= MIN_HITS && it.map { o -> o.cue }.toSet().size >= MIN_CUES }
-+        val spanned = (substantial.ifEmpty { listOf(main) }).flatten()
++        val main = clusters.maxByOrNull { hits(it) } // first (earliest) on a tie
++        val scenes = clusters.filter { isScene(it) }
++        val substantial = scenes + listOfNotNull(chain)
++        val spanned = (substantial.ifEmpty { listOfNotNull(main) }).flatten()
 +        return Scored(
 +            ClipCandidate(
 +                videoId = ep.videoId,
@@ -1968,7 +1992,8 @@ index 0000000..2039549
 +                hits = hits(spanned),
 +                confident = false,
 +            ),
-+            mainHits = hits(main),
++            mainHits = maxOf(main?.let { hits(it) } ?: 0, chain?.let { hits(it) } ?: 0),
++            chainOnly = scenes.isEmpty() && chain != null,
 +        )
 +    }
 +
@@ -1986,6 +2011,52 @@ index 0000000..2039549
 +            }
 +        }
 +        return result
++    }
++
++    /**
++     * Longest run of time-sorted hits whose clip positions rise, each hit within [CHAIN_SKIP_MS]
++     * of the one before. On a tie the nearer predecessor wins, so an earlier repeat of a line
++     * does not pull the start back. Looks back only over that window, so it stays cheap.
++     */
++    private fun orderedChain(sorted: List<Occurrence>, clipOrder: Map<String, Int>): List<Occurrence> {
++        if (sorted.isEmpty()) return emptyList()
++        val length = IntArray(sorted.size) { 1 }
++        val previous = IntArray(sorted.size) { -1 }
++        for (i in sorted.indices) {
++            val at = clipOrder.getValue(sorted[i].key)
++            var j = i - 1
++            while (j >= 0 && sorted[i].startMs - sorted[j].startMs <= CHAIN_SKIP_MS) {
++                if (clipOrder.getValue(sorted[j].key) < at && length[j] + 1 > length[i]) {
++                    length[i] = length[j] + 1
++                    previous[i] = j
++                }
++                j--
++            }
++        }
++        var i = length.indices.maxByOrNull { length[it] }!!
++        val chain = ArrayList<Occurrence>()
++        while (i >= 0) {
++            chain += sorted[i]
++            i = previous[i]
++        }
++        return chain.asReversed()
++    }
++
++    /** Drops end pieces (hits of one cue) with fewer than [END_PIECE_HITS] hits and no other cue within 45 s. */
++    private fun trimWeakEnds(chain: List<Occurrence>): List<Occurrence> {
++        var c = chain
++        fun weak(piece: List<Occurrence>, rest: List<Occurrence>) = piece.map { it.key }.toSet().size < END_PIECE_HITS &&
++            rest.none { r -> piece.any { kotlin.math.abs(r.startMs - it.startMs) <= NEIGHBOUR_MS } }
++        while (c.isNotEmpty()) {
++            val head = c.takeWhile { it.cue == c.first().cue }
++            val tail = c.takeLastWhile { it.cue == c.last().cue }
++            c = when {
++                weak(head, c.drop(head.size)) -> c.drop(head.size)
++                weak(tail, c.dropLast(tail.size)) -> c.dropLast(tail.size)
++                else -> return c
++            }
++        }
++        return c
 +    }
 +
 +    private fun counts(a: Occurrence, b: Occurrence) = a.key != b.key && a.cue != b.cue
@@ -6022,10 +6093,10 @@ index 0000000..d87bb15
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
 new file mode 100644
-index 0000000..5cb8884
+index 0000000..990fb25
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipMatcherTest.kt
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,421 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleSyncCue
@@ -6326,6 +6397,98 @@ index 0000000..5cb8884
 +        assertEquals("tt3:1:7", result.first().videoId)
 +        assertEquals(listOf(true, false, false), result.map { it.confident })
 +        assertNear(target.cues[150].startTimeMs, result.first().startMs)
++    }
++
++    @Test
++    fun `cut-up clip of single lines a minute apart still matches`() {
++        // Five one-line pieces, 60 s apart in the episode: no piece has a neighbour within 45 s.
++        val lines = listOf(100, 115, 130, 145, 160).flatMap { linesFrom(ep1, it..it) }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep1.cues[100].startTimeMs, best.startMs)
++        assertNear(ep1.cues[160].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `clip with the middle cut out spans all its pieces`() {
++        // Three two-line pieces 100 s apart: each piece alone is too small to be a scene.
++        val lines = listOf(100, 125, 150).flatMap { linesFrom(ep2, it..it + 1) }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertEquals("tt1:1:2", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep2.cues[100].startTimeMs, best.startMs)
++        assertNear(ep2.cues[151].endTimeMs, best.endMs)
++    }
++
++    @Test
++    fun `lines spread in the wrong order do not chain`() {
++        val picks = listOf(100, 115, 130, 145, 160)
++        val reversed = withCues(ep2, *picks.mapIndexed { i, c -> (300 - i * 15) to ep1.cues[c] }.toTypedArray())
++        val lines = picks.flatMap { linesFrom(ep1, it..it) }
++        assertEquals(emptyList(), ClipMatcher.match(lines, listOf(reversed)))
++    }
++
++    @Test
++    fun `lines spread too far apart do not chain`() {
++        val picks = listOf(100, 115, 130, 145, 160)
++        val far = withCues(ep2, *picks.mapIndexed { i, c -> (20 + i * 60) to ep1.cues[c] }.toTypedArray())
++        val lines = picks.flatMap { linesFrom(ep1, it..it) }
++        assertEquals(emptyList(), ClipMatcher.match(lines, listOf(far)))
++    }
++
++    @Test
++    fun `one stray triple before the scene does not move the start`() {
++        // The clip opens with three words that the episode says once, 100 s before the scene.
++        val opener = ClipLine(ep1.cues[75].text.split(" ").take(3).joinToString(" "), 0, 1_000)
++        val lines = listOf(opener) + linesFrom(ep1, 100..120).map { it.copy(startMs = it.startMs + 2_000, endMs = it.endMs + 2_000) }
++        val best = ClipMatcher.match(lines, listOf(ep1, ep2, ep3)).first()
++        assertTrue(best.confident)
++        assertNear(ep1.cues[100].startTimeMs, best.startMs)
++    }
++
++    private fun words(ep: EpisodeCues, cue: Int, n: Int) = ep.cues[cue].text.split(" ").take(n).joinToString(" ")
++
++    @Test
++    fun `short stray openers before the scene do not move the start`() {
++        // Four-word openers the episode says once, 2 and almost 3 min before the scene.
++        val openers = listOf(56, 82).map { ClipLine(words(ep1, it, 4), 0, 1_000) }
++        val best = ClipMatcher.match(openers + linesFrom(ep1, 100..120), listOf(ep1, ep2, ep3)).first()
++        assertTrue(best.confident)
++        assertNear(ep1.cues[100].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `a piece of the clip said again earlier does not break the chain`() {
++        // Five-word lines a minute apart; the first line's middle triple is also said once at 0:20.
++        val repeated = withCues(ep1, 5 to SubtitleSyncCue(0, 0, ep1.cues[100].text.split(" ").drop(1).take(3).joinToString(" ")))
++        val lines = listOf(100, 115, 130, 145).map { ClipLine(words(ep1, it, 5), 0, 1_000) }
++        val best = ClipMatcher.match(lines, listOf(repeated, ep2, ep3)).first()
++        assertEquals("tt1:1:1", best.videoId)
++        assertTrue(best.confident)
++        assertNear(ep1.cues[100].startTimeMs, best.startMs)
++    }
++
++    @Test
++    fun `three clip lines in order in a wrong episode are not confident`() {
++        val wrong = withCues(ep2, 50 to ep1.cues[101], 87 to ep1.cues[104], 124 to ep1.cues[107])
++        assertTrue(ClipMatcher.match(linesFrom(ep1, 100..107), listOf(wrong, ep3)).none { it.confident })
++    }
++
++    @Test
++    fun `a single stray triple cannot bridge two pieces too far apart`() {
++        val ep = withCues(ep2, 100 to SubtitleSyncCue(0, 0, "aaa bbb ccc ddd eee"), 142 to SubtitleSyncCue(0, 0, "xxx yyy zzz"),
++            184 to SubtitleSyncCue(0, 0, "fff ggg hhh iii jjj"))
++        val clip = listOf("aaa bbb ccc ddd eee", "xxx yyy zzz", "fff ggg hhh iii jjj").map { ClipLine(it, 0, 1_000) }
++        assertTrue(ClipMatcher.match(clip, listOf(ep)).none { it.confident })
++    }
++
++    @Test
++    fun `a few scattered clip lines in a wrong episode are not confident`() {
++        // The wrong episode says four single clip lines in order, a minute apart; the clip has 21.
++        val wrong = withCues(ep2, 50 to ep1.cues[105], 65 to ep1.cues[110], 80 to ep1.cues[115], 95 to ep1.cues[120])
++        val result = ClipMatcher.match(linesFrom(ep1, 100..120), listOf(wrong))
++        assertTrue(result.none { it.confident })
 +    }
 +
 +    @Test
