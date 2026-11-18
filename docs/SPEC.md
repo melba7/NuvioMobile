@@ -125,7 +125,8 @@ User: Mo, on iPhone, through his own TestFlight build of this fork.
 - A3. Subtitle timing differs between releases by a few seconds, sometimes more. That is why
   playback starts 15 s early, the start is corrected per stream where possible (feature 23), and the check in
   feature 5 is 20 s, not exact.
-- A4. Clips are often sped up, cut or mirrored. The matcher ignores order and speed; mirrored
+- A4. Clips are often sped up, cut or mirrored. The matcher ignores order and speed; pieces of a
+  cut-up clip that keep the episode's order count together even minutes apart; mirrored
   burned-in captions are not read.
 - A5. Opening the app from a share extension is not an official Apple feature. Fallback: the
   extension posts a notification that opens Nuvio when tapped.

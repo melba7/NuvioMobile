@@ -9867,6 +9867,12 @@ ASSUMPTIONS (cannot be checked from here)
   1 day and "no English file" 7 days, top shows interleaved, Instagram embed beside the page read, iOS 26
   SpeechAnalyzer with the old engine as fallback. Tick after Mo's phone check (Timings line, Modern Family still found).
 
+- [ ] **7g. Cut-up clips (2026-11-18)** Mo: still find the show when parts in the middle are cut out.
+  `ClipMatcher` also counts the longest run of hits in clip order (hops up to 3 min) as a scene; no
+  extra network or audio work, about 2 ms more per 24 episodes on a laptop. Tests: single lines a
+  minute apart, middle cut out, wrong order, too far apart, stray opener, scattered lines in a wrong
+  episode. Tick after Mo's phone check with a cut-up clip.
+
 - [ ] **8. Arabic** (after v1 ships; Mo wants it). Speech locale picked from the show's
   language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
   (diacritics, letter forms). Test clip: Love Is Blind: Habibi (on Mo's Mac).
