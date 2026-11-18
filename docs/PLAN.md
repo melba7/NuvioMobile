@@ -9870,8 +9870,8 @@ ASSUMPTIONS (cannot be checked from here)
 - [ ] **7g. Cut-up clips (2026-11-18)** Mo: still find the show when parts in the middle are cut out.
   `ClipMatcher` also counts the longest run of hits in clip order (hops up to 3 min) as a scene; no
   extra network or audio work, about 2 ms more per 24 episodes on a laptop. Tests: single lines a
-  minute apart, middle cut out, wrong order, too far apart, stray opener, scattered lines in a wrong
-  episode. Tick after Mo's phone check with a cut-up clip.
+  minute apart, middle cut out, wrong order, too far apart, stray openers, repeated piece, stray bridge,
+  scattered lines in a wrong episode. Pieces of only 4 words at the ends of a cut clip are not used. Tick after Mo's phone check with a cut-up clip.
 
 - [ ] **8. Arabic** (after v1 ships; Mo wants it). Speech locale picked from the show's
   language or a setting; Arabic subtitles from OpenSubtitles; Arabic text normalising
