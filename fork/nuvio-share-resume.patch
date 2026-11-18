@@ -3321,10 +3321,10 @@ index 0000000..67e7526
 +    listOfNotNull(show.year, if (show.type == "movie") "Movie" else "Series").joinToString(" · ")
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
 new file mode 100644
-index 0000000..cdedcde
+index 0000000..20ca0c4
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,180 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -3388,6 +3388,7 @@ index 0000000..cdedcde
 +
 +        // Many suspects: one subtitle file of each tells which show has the people named in the clip.
 +        val names = ClipNameCheck.names(lines)
++        var namesPickedOne = false
 +        if (ClipNameCheck.needed(suspects, names)) {
 +            progress("Checking which show has the names heard")
 +            note("Names heard", names.joinToString())
@@ -3399,6 +3400,7 @@ index 0000000..cdedcde
 +            if (ranked != null) {
 +                note("Name check", ranked.joinToString { "${it.first.show.name} ${it.second}" }.take(300))
 +                suspects = ranked.map { it.first }
++                namesPickedOne = ranked.size > 1 && ranked[0].second > ranked[1].second
 +            }
 +            timings.lap("names")
 +        }
@@ -3428,10 +3430,12 @@ index 0000000..cdedcde
 +        var tried = 0
 +        var withSubtitles = 0
 +        if (lists.isNotEmpty()) {
-+            val mixed = interleave(lists.map { it.second })
-+            val showNames = lists.joinToString { it.first.name }
++            // Names heard that point to one show settle it: search that show alone, as before.
++            val searched = if (namesPickedOne) lists.take(1) else lists
++            val mixed = interleave(searched.map { it.second })
++            val showNames = searched.joinToString { it.first.name }
 +            val showIds = owners.mapValues { it.value.first.metaId }
-+            val searchDeadline = minOf(deadline, now() + ClipFinderPipeline.SHOW_BUDGET_MS * lists.size)
++            val searchDeadline = minOf(deadline, now() + ClipFinderPipeline.SHOW_BUDGET_MS * searched.size)
 +            val result = withContext(work) {
 +                subtitles.search(lists.first().first.metaId, mixed, lines, searchDeadline, emptyList(), { done, total, found ->
 +                    progress("Searching $showNames: $done of $total episodes, $found with subtitles")
