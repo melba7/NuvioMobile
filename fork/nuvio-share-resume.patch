@@ -665,7 +665,7 @@ index 0000000..fe1e422
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 new file mode 100644
-index 0000000..52e24eb
+index 0000000..fe74335
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipeline.kt
 @@ -0,0 +1,388 @@
@@ -840,7 +840,7 @@ index 0000000..52e24eb
 +                            val partClues = pageClues.copy(screenText = partScreen)
 +                            warmUp = scope.launch {
 +                                beside("search while listening", { "${warm.size} files" }) {
-+                                    showSearch.run(partClues, partLines, prefetch, warm, ClipTimings(now), { _, _ -> }) { }
++                                    showSearch.run(partClues, partLines, prefetch, warm, ClipTimings(now), false, { _, _ -> }) { }
 +                                }
 +                            }
 +                        }
@@ -879,7 +879,7 @@ index 0000000..52e24eb
 +            if (clues.typed.isNotBlank()) note("Show typed", clues.typed)
 +            if (state.value.noClip) return showsOnly(clues)
 +            change { it.copy(stage = ClipStage.Searching, progress = "Working out the show") }
-+            val outcome = showSearch.run(clues, lines, prefetch, warm, timings, { label, value -> note(label, value) }) { text ->
++            val outcome = showSearch.run(clues, lines, prefetch, warm, timings, true, { label, value -> note(label, value) }) { text ->
 +                change { it.copy(progress = text) }
 +            }
 +            val answers = outcome.answers
@@ -1169,10 +1169,10 @@ index 0000000..88cf168
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt
 new file mode 100644
-index 0000000..28b1aa5
+index 0000000..adea46d
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderSession.kt
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,242 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.addons.AddonRepository
@@ -1197,6 +1197,7 @@ index 0000000..28b1aa5
 +import kotlinx.coroutines.flow.MutableStateFlow
 +import kotlinx.coroutines.flow.StateFlow
 +import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.update
 +import kotlinx.coroutines.launch
 +import kotlinx.coroutines.suspendCancellableCoroutine
 +import kotlinx.coroutines.withTimeoutOrNull
@@ -1243,8 +1244,9 @@ index 0000000..28b1aa5
 +            webGet = ::clipWebGet,
 +        )
 +        pipeline = created
++        val armed = ClipPlayTargets.current()
 +        job = scope.launch {
-+            created.run(source) { if (id == runId) _state.value = it }
++            created.run(source) { next -> if (id == runId) show(next, armed) }
 +        }
 +    }
 +
@@ -1272,9 +1274,15 @@ index 0000000..28b1aa5
 +        if (name.isBlank() || !clipCanType(current)) return
 +        job?.cancel()
 +        val id = ++runId
++        val armed = ClipPlayTargets.current()
 +        job = scope.launch {
-+            active.runTyped(current, name, picked) { if (id == runId) _state.value = it }
++            active.runTyped(current, name, picked) { next -> if (id == runId) show(next, armed) }
 +        }
++    }
++
++    /** A state from the run; Mo went on when an answer was opened since it started (a new target is armed then). */
++    private fun show(next: ClipFinderState, armed: ClipPlayTarget?) {
++        _state.update { it.then(next, wentOn = ClipPlayTargets.current() !== armed) }
 +    }
 +
 +    /** The pick list for what was typed so far ([ClipShowPicker]): the catalogs' search and the titles Nuvio knows. */
@@ -1409,10 +1417,10 @@ index 0000000..28b1aa5
 +    ClipWebReply(200, httpPostJsonWithHeaders(url, body, headers))
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderState.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderState.kt
 new file mode 100644
-index 0000000..679b5a3
+index 0000000..ea9ba89
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipFinderState.kt
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,141 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleSyncCue
@@ -1463,6 +1471,17 @@ index 0000000..679b5a3
 +        val note = ClipNote(label, value)
 +        val index = notes.indexOfFirst { it.label == label }
 +        return copy(notes = if (index < 0) notes + note else notes.toMutableList().also { it[index] = note })
++    }
++
++    /**
++     * What to show when the run sends [next] while this is shown. After the answer is shown the run still adds the
++     * YouTube card: notes the stream list or the player added meanwhile stay, and once Mo has opened an answer
++     * ([wentOn]) YouTube no longer opens by itself.
++     */
++    fun then(next: ClipFinderState, wentOn: Boolean): ClipFinderState {
++        if (stage != ClipStage.Done || failed || next.stage != ClipStage.Done || next.failed) return next
++        val added = notes.filter { shown -> next.notes.none { it.label == shown.label } }
++        return next.copy(notes = next.notes + added, openYouTube = next.openYouTube && !wentOn)
 +    }
 +}
 +
@@ -2848,10 +2867,10 @@ index 0000000..d870400
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
 new file mode 100644
-index 0000000..7696884
+index 0000000..e584c4e
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinder.kt
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,212 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlinx.coroutines.async
@@ -2891,10 +2910,12 @@ index 0000000..7696884
 +        clues: ClipClues,
 +        lines: List<ClipLine>,
 +        max: Int = MAX_SHOWS,
++        /** False: Apple's model is not asked (the search while listening, so the model does not slow listening down). */
++        useModel: Boolean = true,
 +        onNote: (label: String, value: String) -> Unit = { _, _ -> },
 +    ): List<ClipSuspect> {
 +        searches.clear()
-+        val suspects = pick(clues, lines, max, onNote)
++        val suspects = pick(clues, lines, max, useModel, onNote)
 +        onNote("Searches", searches.joinToString().ifBlank { "none" }.take(500))
 +        return suspects
 +    }
@@ -2903,9 +2924,9 @@ index 0000000..7696884
 +     * Apple's model is asked beside the searches (it takes seconds) and its answer is read where it always was,
 +     * in step 5b; when that step is not reached the question is dropped.
 +     */
-+    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, onNote: (String, String) -> Unit): List<ClipSuspect> =
++    private suspend fun pick(clues: ClipClues, lines: List<ClipLine>, max: Int, useModel: Boolean, onNote: (String, String) -> Unit): List<ClipSuspect> =
 +        coroutineScope {
-+            val asked = clues.picked == null && clues.typed.isBlank() && lines.isNotEmpty()
++            val asked = useModel && clues.picked == null && clues.typed.isBlank() && lines.isNotEmpty()
 +            val model = if (asked) async { clipQuietly { askModel(ClipModelGuess.prompt(clues, lines)) } ?: ClipModelAnswer(problem = "failed") } else null
 +            try {
 +                pickFrom(clues, lines, max, onNote, model)
@@ -3007,8 +3028,8 @@ index 0000000..7696884
 +        }
 +
 +        // 5b. Apple's on-device model reads what was heard and names up to 3 titles: weak clues, confirmed like all others.
-+        if (top() < 90 && lines.isNotEmpty()) {
-+            val answer = model?.await() ?: ClipModelAnswer(problem = "failed")
++        if (top() < 90 && lines.isNotEmpty() && model != null) {
++            val answer = model.await()
 +            val named = ClipModelGuess.names(answer.text)
 +            onNote("Apple's model", answer.problem.ifBlank { named.joinToString().ifBlank { "named nothing" } })
 +            for (name in named) {
@@ -3125,10 +3146,10 @@ index 0000000..67e7526
 +    listOfNotNull(show.year, if (show.type == "movie") "Movie" else "Series").joinToString(" · ")
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
 new file mode 100644
-index 0000000..9c4cdaa
+index 0000000..a12c567
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/ClipShowSearch.kt
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,133 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.CoroutineContext
@@ -3156,6 +3177,7 @@ index 0000000..9c4cdaa
 +    /**
 +     * [warm]: ids of episodes whose subtitles are in the cache. Read first (they rank early), and filled while
 +     * searching, so a search on the lines heard so far leaves its files for the one on all lines.
++     * [useModel]: false for that search while listening, so Apple's model does not slow listening down.
 +     */
 +    suspend fun run(
 +        clues: ClipClues,
@@ -3163,10 +3185,11 @@ index 0000000..9c4cdaa
 +        prefetch: ClipPrefetch?,
 +        warm: MutableSet<String>,
 +        timings: ClipTimings,
++        useModel: Boolean,
 +        note: (String, String) -> Unit,
 +        progress: (String) -> Unit,
 +    ): ClipShowOutcome {
-+        var suspects = finder.find(clues, lines, onNote = note)
++        var suspects = finder.find(clues, lines, useModel = useModel, onNote = note)
 +        timings.lap("guess")
 +        val hint = ClipNames.hint(clues, lines)
 +        // Episodes fetched beside listening (the page's show, or an earlier run on the first heard lines) are tried first.
@@ -3837,10 +3860,10 @@ index 0000000..31260af
 +}
 diff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt
 new file mode 100644
-index 0000000..2583a6f
+index 0000000..8ee4bb7
 --- /dev/null
 +++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSource.kt
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,192 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.PlayerSubtitleCueParser
@@ -3940,6 +3963,7 @@ index 0000000..2583a6f
 +        var tried = 0
 +        var withSubtitles = 0
 +        val landed = Channel<Pair<ClipEpisode, List<SubtitleSyncCue>?>>(Channel.UNLIMITED)
++        val position = episodes.withIndex().associate { it.value.videoId to it.index }
 +        var next = 0
 +        var running = 0
 +        while (true) {
@@ -3955,7 +3979,9 @@ index 0000000..2583a6f
 +            if (found != null) {
 +                withSubtitles++
 +                fetched?.add(landedEpisode.videoId)
-+                val pool = best + EpisodeCues(landedEpisode.videoId, landedEpisode.season, landedEpisode.episode, found)
++                // In list order (earlier shows first), as when files were matched in batches: equal scores rank the same whichever file landed first.
++                val pool = (best + EpisodeCues(landedEpisode.videoId, landedEpisode.season, landedEpisode.episode, found))
++                    .sortedBy { position[it.videoId] ?: -1 }
 +                candidates = ClipMatcher.match(lines, pool)
 +                best = candidates.mapNotNull { candidate -> pool.firstOrNull { it.videoId == candidate.videoId } }
 +            }
@@ -5020,10 +5046,10 @@ index 0000000..3693661
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt
 new file mode 100644
-index 0000000..0188abc
+index 0000000..12f3c97
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderPipelineWebTest.kt
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,306 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.EmptyCoroutineContext
@@ -5265,22 +5291,27 @@ index 0000000..0188abc
 +    @Test
 +    fun `once the first part is heard the show is searched beside listening, and the answer is the one from all lines`() = runTest {
 +        val page = mapOf(link to pageJson("lol"))
-+        val model: suspend (String) -> ClipModelAnswer = { ClipModelAnswer(text = "Made Up Show") }
-+        val phone = Phone(page, clipLines.drop(6), hold = true, firstPart = clipLines.take(6))
-+        val h = Harness(phone, search = { query -> if (query == "Made Up Show") listOf(show) else emptyList() }, ask = model)
++        // Only what is heard names the show, so the page alone fetches nothing.
++        val heard = listOf(ClipLine("Previously on Made Up Show", 0, 1_000)) + clipLines
++        var asked = 0
++        val model: suspend (String) -> ClipModelAnswer = { asked++; ClipModelAnswer(problem = "not sure") }
++        val search: suspend (String) -> List<ShowGuess> = { query -> if (query.equals("Made Up Show", ignoreCase = true)) listOf(show) else emptyList() }
++        val phone = Phone(page, heard.drop(7), hold = true, firstPart = heard.take(7))
++        val h = Harness(phone, search = search, ask = model)
 +        val job = launch { h.run() }
 +        runCurrent()
 +        assertEquals(1, phone.listenCalls)
 +        assertEquals(12, h.addon.downloaded.size, "the subtitle files are fetched before listening ends")
 +        assertTrue(h.states.none { it.stage == ClipStage.Searching }, "the screen still shows listening")
++        assertEquals(0, asked, "Apple's model is not asked while listening")
 +        phone.release()
 +        job.join()
 +        assertEquals(12, h.addon.downloaded.size, "nothing is downloaded twice")
 +        assertEquals(ClipStage.Done, h.last.stage)
-+        assertEquals(clipLines, h.last.lines)
++        assertEquals(heard, h.last.lines)
 +        assertTrue("search while listening" in h.note("Timings") && "beside" in h.note("Timings"))
 +
-+        val whole = Harness(Phone(page, clipLines), search = { query -> if (query == "Made Up Show") listOf(show) else emptyList() }, ask = model)
++        val whole = Harness(Phone(page, heard), search = search, ask = model)
 +        whole.run()
 +        assertTrue(whole.last.answers.isNotEmpty())
 +        assertEquals(whole.last.answers.map { it.candidate }, h.last.answers.map { it.candidate })
@@ -5349,10 +5380,10 @@ index 0000000..f7745ef
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderStateTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderStateTest.kt
 new file mode 100644
-index 0000000..9f046e4
+index 0000000..c0637d2
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipFinderStateTest.kt
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,86 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.test.Test
@@ -5422,7 +5453,23 @@ index 0000000..9f046e4
 +        assertEquals(true, clipCanType(ClipFinderState(stage = ClipStage.Searching, lines = heard, failed = true)))
 +        assertEquals(true, clipCanType(ClipFinderState(stage = ClipStage.Done, lines = heard)))
 +    }
++
++    @Test
++    fun `the YouTube card added after the answer keeps notes from the stream list and opens only if Mo stayed`() {
++        val done = ClipFinderState(stage = ClipStage.Done, answers = listOf(answer(2, 5, "Pilot"))).withNote("Timings", "1 s")
++        val shown = done.withNote("Stream order", "best first")
++        val video = ClipVideoAnswer(ClipVideo("FULLvideo01"), candidate(0, 1_000))
++        val late = done.copy(youtube = listOf(video), openYouTube = true).withNote("Timings", "2 s").withNote("YouTube match", "1 of 1")
++        val merged = shown.then(late, wentOn = false)
++        assertEquals(listOf(video), merged.youtube)
++        assertEquals(listOf("Timings" to "2 s", "YouTube match" to "1 of 1", "Stream order" to "best first"), merged.notes.map { it.label to it.value })
++        assertEquals(true, merged.openYouTube)
++        assertEquals(false, shown.then(late, wentOn = true).openYouTube)
++        val searching = ClipFinderState(stage = ClipStage.Searching)
++        assertEquals(searching, shown.then(searching, wentOn = true), "a new search replaces what is shown")
++    }
 +}
++
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipInstagramTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipInstagramTest.kt
 new file mode 100644
 index 0000000..d87bb15
@@ -6617,10 +6664,10 @@ index 0000000..1408040
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
 new file mode 100644
-index 0000000..509b483
+index 0000000..44bbb0b
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowFinderTest.kt
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,295 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.coroutines.cancellation.CancellationException
@@ -6630,6 +6677,7 @@ index 0000000..509b483
 +import kotlin.test.assertTrue
 +import kotlinx.coroutines.ExperimentalCoroutinesApi
 +import kotlinx.coroutines.delay
++import kotlinx.coroutines.test.currentTime
 +import kotlinx.coroutines.test.runTest
 +
 +/** Names, ids and handles here are made up, except one real caption and the show title it names. */
@@ -6864,7 +6912,7 @@ index 0000000..509b483
 +                { ClipModelAnswer(problem = "not asked") },
 +            )
 +            val before = currentTime
-+            val found = subject.find(ClipClues(caption = caption)) { label, value -> seen[label] = value }
++            val found = subject.find(ClipClues(caption = caption), emptyList()) { label, value -> seen[label] = value }
 +            return Triple(found, seen["Searches"], currentTime - before)
 +        }
 +        val quick = run(0)
@@ -6904,6 +6952,15 @@ index 0000000..509b483
 +        val found = subject.find(ClipClues(caption = "#madeupshow"), listOf(ClipLine("bako ritu nesa dako", 0, 3_000)))
 +        assertEquals(listOf("Made Up Show"), found.map { it.show.name })
 +        assertEquals(0L, currentTime)
++    }
++
++    @Test
++    fun `the search while listening does not ask Apple's model`() = runTest {
++        var modelCalls = 0
++        val subject = ClipShowFinder({ emptyList() }, { emptyList() }, memory, { modelCalls++; ClipModelAnswer(text = "Made Up Show") })
++        val found = subject.find(ClipClues(caption = "something"), listOf(ClipLine("bako ritu nesa dako", 0, 3_000)), useModel = false)
++        assertTrue(found.isEmpty())
++        assertEquals(0, modelCalls)
 +    }
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowPickerTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipShowPickerTest.kt
@@ -7136,10 +7193,10 @@ index 0000000..f08bdfa
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt
 new file mode 100644
-index 0000000..6bd2f07
+index 0000000..52765ad
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/ClipYouTubeFinderTest.kt
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,140 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import kotlin.test.Test
@@ -7147,6 +7204,7 @@ index 0000000..6bd2f07
 +import kotlin.test.assertTrue
 +import kotlinx.coroutines.ExperimentalCoroutinesApi
 +import kotlinx.coroutines.delay
++import kotlinx.coroutines.test.currentTime
 +import kotlinx.coroutines.test.runTest
 +
 +/**
@@ -7467,10 +7525,10 @@ index 0000000..02af886
 +}
 diff --git a/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt
 new file mode 100644
-index 0000000..201be4e
+index 0000000..4190e38
 --- /dev/null
 +++ b/composeApp/src/commonTest/kotlin/com/nuvio/app/features/clipfinder/EpisodeSubtitleSourceTest.kt
-@@ -0,0 +1,243 @@
+@@ -0,0 +1,255 @@
 +package com.nuvio.app.features.clipfinder
 +
 +import com.nuvio.app.features.player.SubtitleSyncCue
@@ -7483,6 +7541,7 @@ index 0000000..201be4e
 +import kotlin.test.assertTrue
 +import kotlinx.coroutines.ExperimentalCoroutinesApi
 +import kotlinx.coroutines.delay
++import kotlinx.coroutines.test.currentTime
 +import kotlinx.coroutines.test.runTest
 +
 +/** Generated nonsense words shared by the Clip finder tests; no real dialogue. */
@@ -7676,6 +7735,17 @@ index 0000000..201be4e
 +        assertEquals(3, addon.downloaded.size, "the three slow files were cancelled before their download")
 +        assertTrue(addon.listCalls <= 8, "no new fetch after the match: ${addon.listCalls}")
 +        assertTrue(currentTime < 5_000L, "the search did not wait for the slow files")
++    }
++
++    @Test
++    fun `equal matches rank in list order whichever file lands first`() = runTest {
++        val list = episodes(2)
++        val same = ClipTestText.cueTexts(205)
++        val addon = FakeSubtitleAddon(mapOf("e1" to same, "e2" to same))
++        addon.listDelays = mapOf("e1" to 1_000L)
++        val lines = ClipTestText.linesFrom(same, 10..21)
++        val result = source(addon).search("show", list, lines, deadlineMs = Long.MAX_VALUE)
++        assertEquals(listOf("e1", "e2"), result.candidates.map { it.videoId })
 +    }
 +
 +    @Test
@@ -9447,10 +9517,10 @@ index 0000000..aa62f6f
 +}
 diff --git a/iosApp/iosApp/ClipFinder/ClipTranscriber.swift b/iosApp/iosApp/ClipFinder/ClipTranscriber.swift
 new file mode 100644
-index 0000000..0ac57ce
+index 0000000..1344c01
 --- /dev/null
 +++ b/iosApp/iosApp/ClipFinder/ClipTranscriber.swift
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,351 @@
 +import AVFoundation
 +import Foundation
 +import Speech
@@ -9490,6 +9560,10 @@ index 0000000..0ac57ce
 +    private var partLength = 0.0
 +    private var committed: [Word] = []
 +    private var latest: [Word] = []
++    private var fastTask: Task<Void, Never>?
++    private var fastToken = 0
++    private var fastFile: URL?
++    private static let fastTimeout = 150.0
 +
 +    func transcribe(
 +        fileURL: URL,
@@ -9565,6 +9639,12 @@ index 0000000..0ac57ce
 +        note?("Loudness", String(format: "%.0f dB, made %.1f times louder", level, Double(gain)))
 +        partCount = max(1, Int(((max(seconds - 2.0, 1.0)) / ClipTranscriber.stepSeconds).rounded(.up)))
 +        partIndex = 0
++        #if canImport(FoundationModels)
++        if #available(iOS 26.0, *) {
++            startFast()
++            return
++        }
++        #endif
 +        nextPart()
 +    }
 +
@@ -9671,6 +9751,105 @@ index 0000000..0ac57ce
 +        committed = []
 +    }
 +
++    #if canImport(FoundationModels)
++    /// iOS 26: one SpeechAnalyzer pass over the whole clip. Any failure, timeout or empty answer
++    /// falls back to the 30 s SFSpeechRecognizer parts above.
++    @available(iOS 26.0, *)
++    private func startFast() {
++        fastToken += 1
++        let token = fastToken
++        let all = samples
++        let rate = sampleRate
++        let boost = gain
++        let file = FileManager.default.temporaryDirectory.appendingPathComponent("nuvio-clip-all-" + UUID().uuidString + ".wav")
++        fastFile = file
++        note?("Speech", "trying the faster iOS 26 engine")
++        fastTask = Task { [weak self] in
++            var words: [Word]?
++            do {
++                try ClipAudioReader.wav(all[0..<all.count], sampleRate: rate, gain: boost).write(to: file)
++                words = await ClipTranscriber.fastWords(file: file)
++            } catch {
++                words = nil
++            }
++            let found = words
++            DispatchQueue.main.async {
++                self?.fastDone(token: token, words: found)
++            }
++        }
++        DispatchQueue.main.asyncAfter(deadline: .now() + ClipTranscriber.fastTimeout) { [weak self] in
++            self?.fastDone(token: token, words: nil)
++        }
++    }
++
++    @available(iOS 26.0, *)
++    private static func fastWords(file: URL) async -> [Word]? {
++        do {
++            guard SpeechTranscriber.isAvailable,
++                  let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US")) else { return nil }
++            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
++            let status = await AssetInventory.status(forModules: [transcriber])
++            if status == .unsupported { return nil }
++            if status != .installed {
++                try await AssetInventory.assetInstallationRequest(supporting: [transcriber])?.downloadAndInstall()
++            }
++            let analyzer = SpeechAnalyzer(modules: [transcriber])
++            let audioFile = try AVAudioFile(forReading: file)
++            let collector = Task { () -> [Word] in
++                var words: [Word] = []
++                for try await result in transcriber.results {
++                    for run in result.text.runs {
++                        let pieces = String(result.text[run.range].characters).split(whereSeparator: { $0.isWhitespace })
++                        guard !pieces.isEmpty else { continue }
++                        let range = run.audioTimeRange ?? result.range
++                        let start = range.start.seconds
++                        let step = range.duration.seconds / Double(pieces.count)
++                        guard start.isFinite, step.isFinite else { continue }
++                        for (index, piece) in pieces.enumerated() {
++                            words.append(Word(text: String(piece), start: start + Double(index) * step, end: start + Double(index + 1) * step))
++                        }
++                    }
++                }
++                return words
++            }
++            return try await withTaskCancellationHandler {
++                if let last = try await analyzer.analyzeSequence(from: audioFile) {
++                    try await analyzer.finalizeAndFinish(through: last)
++                } else {
++                    await analyzer.cancelAndFinishNow()
++                }
++                return try await collector.value
++            } onCancel: {
++                collector.cancel()
++                Task { await analyzer.cancelAndFinishNow() }
++            }
++        } catch {
++            return nil
++        }
++    }
++
++    private func fastDone(token: Int, words: [Word]?) {
++        guard !cancelled, token == fastToken else { return }
++        fastToken += 1
++        fastTask?.cancel()
++        fastTask = nil
++        if let file = fastFile { try? FileManager.default.removeItem(at: file) }
++        fastFile = nil
++        guard let words = words, !words.isEmpty else {
++            note?("Speech", "iOS 26 engine gave nothing, using the older one")
++            started = Date()
++            nextPart()
++            return
++        }
++        note?("Listening", String(format: "iOS 26 engine, %.0f s", Date().timeIntervalSince(started)))
++        committed = words
++        partOffset = 0
++        partLength = Double(samples.count) / Double(sampleRate)
++        sendLines()
++        finish(nil)
++    }
++    #endif
++
 +    private func finish(_ error: String?) {
 +        let done = completion
 +        completion = nil
@@ -9681,6 +9860,10 @@ index 0000000..0ac57ce
 +    }
 +
 +    private func cleanUp() {
++        fastTask?.cancel()
++        fastTask = nil
++        if let file = fastFile { try? FileManager.default.removeItem(at: file) }
++        fastFile = nil
 +        task?.cancel()
 +        task = nil
 +        if let file = partFile { try? FileManager.default.removeItem(at: file) }
