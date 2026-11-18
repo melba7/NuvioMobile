@@ -10,3 +10,5 @@
 - "Slow" cannot be fixed without a per-stage timing line in Details: add measurement before speedups, and write each speedup as a hypothesis to confirm.
 - Before planning on a field, check that the source really sends it: OpenSubtitles v3 gives only id, url and lang (no release name) and iOS never computes the video hash, so "same release" ranking had to become "what the player can check".
 - 2026-11-17: a mass helper rename by a subagent deleted closing braces in 3 files; push to the PR early so Fork check compiles it, before reviewing logic.
+- 2026-11-18: subagent tests used `currentTime` without `import kotlinx.coroutines.test.currentTime` and a call missed a required argument; tell builders to check every import and signature, and push early so Fork check compiles.
+- 2026-11-18: with a per-file stop rule, a test that two tied files rank in list order must keep each file below the decisive bar, or the first to land stops the search.
